@@ -16,7 +16,7 @@ from .postman_folder_extractor import count_requests, extract_folders
 from .postman_parser import parse_collection, parse_environment
 from .postman_unsupported import detect_unsupported_features
 from .postman_variable_extractor import extract_variable_references
-from .postman_variable_resolver import resolve_variables, unresolved_names
+from .postman_variable_resolver import collection_variable_values, resolve_variables, unresolved_names
 
 
 def inspect_collection(
@@ -41,11 +41,7 @@ def inspect_collection(
         environment_data = parsed_env.data
         warnings.extend(parsed_env.warnings)
 
-    collection_variables: dict[str, str] = {
-        key: str(v.get("value", ""))
-        for v in (collection_data.get("variable") or [])
-        if isinstance(v, dict) and isinstance(key := v.get("key"), str) and key
-    }
+    collection_variables = collection_variable_values(collection_data)
 
     folders = extract_folders(collection_data)
     references = extract_variable_references(collection_data)

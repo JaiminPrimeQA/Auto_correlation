@@ -49,3 +49,12 @@ def resolve_variables(
 
 def unresolved_names(variables: list[PostmanVariable]) -> list[str]:
     return sorted(v.name for v in variables if v.source == VariableSource.UNRESOLVED)
+
+
+def collection_variable_values(collection_data: dict) -> dict[str, str]:
+    """`{key: str(value)}` for every collection-level variable with a non-empty key."""
+    return {
+        key: str(v.get("value", ""))
+        for v in (collection_data.get("variable") or [])
+        if isinstance(v, dict) and isinstance(key := v.get("key"), str) and key
+    }

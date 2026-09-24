@@ -1,6 +1,10 @@
 from app.domain.enums import VariableSource
 from app.services.postman_variable_extractor import VariableReference
-from app.services.postman_variable_resolver import resolve_variables, unresolved_names
+from app.services.postman_variable_resolver import (
+    collection_variable_values,
+    resolve_variables,
+    unresolved_names,
+)
 
 
 def test_precedence_supplied_beats_environment_beats_collection():
@@ -57,3 +61,19 @@ def test_results_are_sorted_by_name():
     refs = [VariableReference("zeta", "loc"), VariableReference("alpha", "loc")]
     variables = resolve_variables(refs, collection_variables={}, environment_values={})
     assert [v.name for v in variables] == ["alpha", "zeta"]
+
+
+def test_collection_variable_values_extracts_key_value_pairs():
+    data = {
+        "variable": [
+            {"key": "host", "value": "example.com"},
+            {"key": "", "value": "ignored-empty-key"},
+            {"value": "ignored-missing-key"},
+            "not-a-dict",
+        ],
+    }
+    assert collection_variable_values(data) == {"host": "example.com"}
+
+
+def test_collection_variable_values_handles_missing_variable_list():
+    assert collection_variable_values({}) == {}
