@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     # localhost/private/metadata-IP checks in `destination_policy`.
     blocked_hostnames: str = "169.254.169.254,metadata.google.internal,metadata.goog,metadata.azure.com"
 
+    # --- Execution jobs (Phase 2: state model + fake runner) ---
+    max_concurrent_jobs_per_owner: int = 2
+    job_ttl_seconds: int = 30 * 60
+    job_run_timeout_seconds: int = 5 * 60
+    max_report_bytes: int = 25 * MIB
+    # A repeat POST with the same Idempotency-Key header, from the same owner,
+    # within this window returns the existing job instead of starting a new one.
+    idempotency_window_seconds: int = 10 * 60
+
     # --- Session store ---
     session_ttl_seconds: int = 30 * 60
     session_store: str = "memory"  # memory | redis
