@@ -108,36 +108,45 @@ def _write_state(
     extra_warnings: list[str] | None = None,
     analysis_id: str | None = None,
 ) -> bool:
-    """Re-read the job and write `state` onto it, honoring cancellation and
-    never resurrecting a deleted job or overwriting a terminal state.
+    """Atomically re-read and write `state` onto the job, honoring
+    cancellation and never resurrecting a deleted job or overwriting a
+    terminal state.
+
+    The existence/terminal/cancel check and the write happen inside one
+    `store.mutate` call, under the store's lock, so a concurrent delete or
+    cancellation cannot land between the check and the write (`run_job` runs
+    in a background threadpool, so this is a real race, not a hypothetical
+    one).
 
     Returns True if `state` was written; False if the job is gone, already
     terminal, or cancellation preempted the write (in which case CANCELLED was
     written instead, unless the job was already terminal, in which case
     nothing was written at all).
     """
-    fresh = store.get(job_id)
-    if fresh is None:
-        return False
-    if not fresh.is_active:
-        return False
-    if fresh.cancel_requested:
-        fresh.state = ExecutionJobState.CANCELLED
-        fresh.stage_history.append(ExecutionJobState.CANCELLED.value)
-        store.update(fresh)
-        return False
-    fresh.state = state
-    fresh.stage_history.append(state.value)
-    if error_code is not None:
-        fresh.error_code = error_code
-    if error_detail is not None:
-        fresh.error_detail = error_detail
-    if extra_warnings:
-        fresh.warnings.extend(extra_warnings)
-    if analysis_id is not None:
-        fresh.analysis_id = analysis_id
-    store.update(fresh)
-    return True
+    written = False
+
+    def _apply(fresh: ExecutionJob) -> None:
+        nonlocal written
+        if not fresh.is_active:
+            return
+        if fresh.cancel_requested:
+            fresh.state = ExecutionJobState.CANCELLED
+            fresh.stage_history.append(ExecutionJobState.CANCELLED.value)
+            return
+        fresh.state = state
+        fresh.stage_history.append(state.value)
+        if error_code is not None:
+            fresh.error_code = error_code
+        if error_detail is not None:
+            fresh.error_detail = error_detail
+        if extra_warnings:
+            fresh.warnings.extend(extra_warnings)
+        if analysis_id is not None:
+            fresh.analysis_id = analysis_id
+        written = True
+
+    result = store.mutate(job_id, _apply)
+    return result is not None and written
 
 
 def _run_safely(runner: NewmanRunner, run_input: RunInput) -> RunOutcome | None:
@@ -163,6 +172,59 @@ def _outcome_error(outcome: RunOutcome, settings: Settings) -> tuple[str, str | 
     return None
 
 
+def _run_stage(
+    job_id: str,
+    store: ExecutionJobStore,
+    runner: NewmanRunner,
+    run_input: RunInput,
+    stage: ExecutionJobState,
+    settings: Settings,
+) -> RunOutcome | None:
+    """Advance the job to `stage`, run the Newman runner once, and return a
+    usable RunOutcome - or None if the stage could not proceed, having
+    already written the appropriate terminal state (FAILED/CANCELLED) itself.
+
+    Shared by both the baseline and comparison stages, which need identical
+    runner-exception and outcome-validation handling.
+    """
+    if not _write_state(job_id, store, stage):
+        return None
+    outcome = _run_safely(runner, run_input)
+    if outcome is None:
+        _write_state(
+            job_id, store, ExecutionJobState.FAILED,
+            error_code="runner_error", error_detail="The Newman runner failed unexpectedly.",
+        )
+        return None
+    error = _outcome_error(outcome, settings)
+    if error is not None:
+        code, detail = error
+        _write_state(job_id, store, ExecutionJobState.FAILED, error_code=code, error_detail=detail)
+        return None
+    return outcome
+
+
+def _redact_variable_values(text: str, variable_values: dict[str, str]) -> str:
+    """Replace any supplied/resolved variable value of length >= 4 that
+    appears in `text` with its `{{name}}` placeholder, longest values first so
+    a value that is a substring of another value is not partially clobbered.
+
+    Destination-validation warnings can otherwise echo a raw variable value
+    (e.g. a blocked hostname supplied via a collection variable); per the
+    project-wide rule that a job record never carries a supplied/resolved
+    value, every warning must be passed through this before it reaches
+    `job.warnings`.
+    """
+    redactable = sorted(
+        ((name, value) for name, value in variable_values.items() if len(value) >= 4),
+        key=lambda item: len(item[1]),
+        reverse=True,
+    )
+    for name, value in redactable:
+        text = text.replace(value, f"{{{{{name}}}}}")
+    return text
+
+
 def run_job(
     job_id: str,
     *,
@@ -178,14 +240,42 @@ def run_job(
 ) -> None:
     """Drive a queued execution job through its state machine.
 
-    Every path below ends in a terminal state (or a deliberate no-op when the
-    job is missing, not queued, already terminal, or cancelled) so a job never
-    gets stuck counting against the owner's concurrency cap.
+    Every path ends in a terminal state (or a deliberate no-op when the job is
+    missing, not queued, already terminal, or cancelled) so a job never gets
+    stuck counting against the owner's concurrency cap - including when
+    something inside the drive logic raises an exception we did not
+    specifically anticipate (e.g. a resolver or the analysis store itself).
     """
     job = store.get(job_id)
     if job is None or job.state != ExecutionJobState.QUEUED:
         return
 
+    try:
+        _drive_job(
+            job_id, collection_data=collection_data, environment_data=environment_data,
+            variable_values=variable_values, folder_id=folder_id, runner=runner, store=store,
+            analysis_store=analysis_store, settings=settings, resolver=resolver,
+        )
+    except Exception:
+        _write_state(
+            job_id, store, ExecutionJobState.FAILED,
+            error_code="unexpected_error", error_detail="The execution job failed unexpectedly.",
+        )
+
+
+def _drive_job(
+    job_id: str,
+    *,
+    collection_data: dict,
+    environment_data: dict | None,
+    variable_values: dict[str, str],
+    folder_id: str | None,
+    runner: NewmanRunner,
+    store: ExecutionJobStore,
+    analysis_store: SessionStore,
+    settings: Settings,
+    resolver: destination_policy.Resolver | None,
+) -> None:
     if not _write_state(job_id, store, ExecutionJobState.VALIDATING):
         return
 
@@ -193,15 +283,13 @@ def run_job(
         collection_data, environment_values=variable_values, settings=settings, resolver=resolver,
     )
     if domain_report.warnings:
+        redacted_warnings = [_redact_variable_values(w, variable_values) for w in domain_report.warnings]
         _write_state(
             job_id, store, ExecutionJobState.FAILED,
             error_code="destination_validation_failed",
             error_detail="One or more request targets failed destination validation.",
-            extra_warnings=domain_report.warnings,
+            extra_warnings=redacted_warnings,
         )
-        return
-
-    if not _write_state(job_id, store, ExecutionJobState.RUNNING_BASELINE):
         return
 
     run_input = RunInput(
@@ -210,39 +298,18 @@ def run_job(
         timeout_seconds=settings.job_run_timeout_seconds,
     )
 
-    baseline = _run_safely(runner, run_input)
+    baseline = _run_stage(job_id, store, runner, run_input, ExecutionJobState.RUNNING_BASELINE, settings)
     if baseline is None:
-        _write_state(
-            job_id, store, ExecutionJobState.FAILED,
-            error_code="runner_error", error_detail="The Newman runner failed unexpectedly.",
-        )
-        return
-    baseline_error = _outcome_error(baseline, settings)
-    if baseline_error is not None:
-        code, detail = baseline_error
-        _write_state(job_id, store, ExecutionJobState.FAILED, error_code=code, error_detail=detail)
         return
 
-    if not _write_state(job_id, store, ExecutionJobState.RUNNING_COMPARISON):
-        return
-
-    comparison = _run_safely(runner, run_input)
+    comparison = _run_stage(job_id, store, runner, run_input, ExecutionJobState.RUNNING_COMPARISON, settings)
     if comparison is None:
-        _write_state(
-            job_id, store, ExecutionJobState.FAILED,
-            error_code="runner_error", error_detail="The Newman runner failed unexpectedly.",
-        )
-        return
-    comparison_error = _outcome_error(comparison, settings)
-    if comparison_error is not None:
-        code, detail = comparison_error
-        _write_state(job_id, store, ExecutionJobState.FAILED, error_code=code, error_detail=detail)
         return
 
     if not _write_state(job_id, store, ExecutionJobState.ANALYZING):
         return
 
-    # `_outcome_error` already rejected a None/empty report for both outcomes.
+    # `_outcome_error` (inside `_run_stage`) already rejected a None/empty report for both outcomes.
     assert baseline.report_bytes is not None
     assert comparison.report_bytes is not None
     try:

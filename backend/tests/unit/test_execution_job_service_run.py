@@ -31,12 +31,15 @@ def _newman_report(token: str) -> bytes:
     ])).encode()
 
 
-def _run(job, runner, store, *, analysis_store=None, settings=None, collection_data=None, resolver=None):
+def _run(
+    job, runner, store, *,
+    analysis_store=None, settings=None, collection_data=None, resolver=None, variable_values=None,
+):
     run_job(
         job.id,
         collection_data=collection_data or {"info": {"name": "Demo"}, "item": []},
         environment_data=None,
-        variable_values={},
+        variable_values=variable_values if variable_values is not None else {},
         folder_id=None,
         runner=runner,
         store=store,
@@ -90,6 +93,7 @@ def test_baseline_failure_stops_before_comparison_and_marks_failed():
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "timeout"
     assert final.analysis_id is None
+    assert final.stage_history[-1] == "failed"
     assert len(runner.calls) == 1  # comparison never attempted
 
 
@@ -104,6 +108,7 @@ def test_comparison_failure_marks_failed_after_baseline_succeeded():
     final = store.get(job.id)
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "process_failed"
+    assert final.stage_history[-1] == "failed"
 
 
 def test_cancel_requested_before_run_stops_immediately():
@@ -182,13 +187,17 @@ class _CancellingRunner:
 
 def test_cancel_requested_during_baseline_run_stops_before_comparison():
     store = InMemoryExecutionJobStore(ttl_seconds=60)
+    analysis_store = InMemorySessionStore(ttl_seconds=60)
+    created: list = []
+    analysis_store.create = lambda analysis: created.append(analysis)  # type: ignore[method-assign]
     job = _queued_job(store)
     runner = _CancellingRunner(store, job.id, RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")))
-    _run(job, runner, store)
+    _run(job, runner, store, analysis_store=analysis_store)
     final = store.get(job.id)
     assert final.state == ExecutionJobState.CANCELLED
     assert final.analysis_id is None
     assert len(runner.calls) == 1  # comparison never run
+    assert created == []  # no analysis was ever built or persisted
 
 
 class _DeletingRunner:
@@ -260,6 +269,7 @@ def test_blocked_destination_fails_closed_without_calling_the_runner():
     assert final.error_code == "destination_validation_failed"
     assert final.error_detail == "One or more request targets failed destination validation."
     assert final.warnings  # the domain report's warnings were recorded
+    assert final.stage_history[-1] == "failed"
     assert runner.calls == []
 
 
@@ -298,6 +308,7 @@ def test_runner_exception_marks_failed_with_a_generic_detail():
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "runner_error"
     assert final.error_detail == "The Newman runner failed unexpectedly."
+    assert final.stage_history[-1] == "failed"
     assert "secret_token" not in (final.error_detail or "")
 
 
@@ -309,6 +320,7 @@ def test_run_failure_without_an_error_code_maps_to_run_failed():
     final = store.get(job.id)
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "run_failed"
+    assert final.stage_history[-1] == "failed"
 
 
 def test_missing_report_bytes_marks_failed():
@@ -319,6 +331,7 @@ def test_missing_report_bytes_marks_failed():
     final = store.get(job.id)
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "missing_report"
+    assert final.stage_history[-1] == "failed"
 
 
 def test_empty_report_bytes_marks_failed():
@@ -329,6 +342,7 @@ def test_empty_report_bytes_marks_failed():
     final = store.get(job.id)
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "missing_report"
+    assert final.stage_history[-1] == "failed"
 
 
 def test_oversized_report_bytes_marks_failed():
@@ -339,6 +353,7 @@ def test_oversized_report_bytes_marks_failed():
     final = store.get(job.id)
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "report_too_large"
+    assert final.stage_history[-1] == "failed"
 
 
 def test_analysis_problem_exception_maps_its_code_and_detail(monkeypatch):
@@ -358,6 +373,7 @@ def test_analysis_problem_exception_maps_its_code_and_detail(monkeypatch):
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "validation_error"
     assert final.error_detail == "Bad newman report shape."
+    assert final.stage_history[-1] == "failed"
 
 
 def test_analysis_unexpected_exception_marks_failed_with_a_generic_detail(monkeypatch):
@@ -377,6 +393,7 @@ def test_analysis_unexpected_exception_marks_failed_with_a_generic_detail(monkey
     assert final.state == ExecutionJobState.FAILED
     assert final.error_code == "analysis_error"
     assert final.error_detail == "Analysis failed unexpectedly."
+    assert final.stage_history[-1] == "failed"
     assert "hunter2" not in (final.error_detail or "")
 
 
@@ -423,3 +440,73 @@ def test_resolver_is_passed_through_to_destination_validation():
     _run(job, runner, store, collection_data=collection, resolver=fake_resolver)
     final = store.get(job.id)
     assert final.state == ExecutionJobState.READY
+
+
+# --- Fix round 1: any unexpected exception in run_job must still end terminal ---
+
+
+def test_resolver_exception_during_validation_marks_failed_generically():
+    """A resolver raising something other than ProblemException (e.g. a raw
+    OSError from a real DNS lookup) must not leave the job stuck VALIDATING.
+    """
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://internal.example.test/x")])
+    runner = FakeNewmanRunner([])
+
+    def raising_resolver(hostname: str) -> list[str]:
+        raise OSError("dns server unreachable at 10.0.0.5")
+
+    _run(job, runner, store, collection_data=collection, resolver=raising_resolver)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "unexpected_error"
+    assert final.stage_history[-1] == "failed"
+    assert "dns server" not in (final.error_detail or "")
+    assert "10.0.0.5" not in (final.error_detail or "")
+    assert runner.calls == []
+
+
+def test_analysis_store_create_exception_marks_failed_generically():
+    """analysis_store.create raising must not leave the job stuck ANALYZING."""
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    analysis_store = InMemorySessionStore(ttl_seconds=60)
+
+    def raising_create(analysis) -> None:
+        raise RuntimeError("disk full writing /var/data/sessions token=abc123")
+
+    analysis_store.create = raising_create  # type: ignore[method-assign]
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    _run(job, runner, store, analysis_store=analysis_store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "unexpected_error"
+    assert final.stage_history[-1] == "failed"
+    assert final.analysis_id is None
+    assert "disk full" not in (final.error_detail or "")
+    assert "abc123" not in (final.error_detail or "")
+
+
+# --- Fix round 1: destination-validation warnings must not leak variable values ---
+
+
+def test_destination_validation_warnings_redact_variable_values():
+    """A warning that echoes a supplied/resolved variable value (e.g. a
+    blocked hostname) must have that value replaced with its `{{name}}`
+    placeholder before it ever lands on job.warnings - job records must never
+    carry a raw variable value.
+    """
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://{{host}}/x")])
+    runner = FakeNewmanRunner([])
+    _run(job, runner, store, collection_data=collection, variable_values={"host": "localhost"})
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "destination_validation_failed"
+    assert not any("localhost" in w for w in final.warnings)
+    assert any("{{host}}" in w for w in final.warnings)

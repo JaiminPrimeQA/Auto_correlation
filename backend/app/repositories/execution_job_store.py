@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 from ..domain.execution_job import ExecutionJob
 
@@ -33,6 +34,16 @@ class ExecutionJobStore(ABC):
 
     @abstractmethod
     def count_active(self, owner_key: str) -> int: ...
+
+    @abstractmethod
+    def mutate(self, job_id: str, fn: Callable[[ExecutionJob], None]) -> ExecutionJob | None:
+        """Atomically look up `job_id` and, if it exists and is unexpired, apply
+        `fn` to it and persist the result - all under one lock acquisition, so
+        a concurrent delete/update cannot land between the check and the write.
+
+        Returns the (mutated) job, or None if it is missing or expired -
+        without inserting anything in that case.
+        """
 
 
 class InMemoryExecutionJobStore(ExecutionJobStore):
@@ -87,6 +98,19 @@ class InMemoryExecutionJobStore(ExecutionJobStore):
         with self._lock:
             self._cleanup()
             return sum(1 for j in self._data.values() if j.owner_key == owner_key and j.is_active)
+
+    def mutate(self, job_id: str, fn: Callable[[ExecutionJob], None]) -> ExecutionJob | None:
+        with self._lock:
+            self._cleanup()
+            job = self._data.get(job_id)
+            if job is None:
+                return None
+            if job.expires_at < time.time():
+                self._data.pop(job_id, None)
+                return None
+            fn(job)
+            self._data[job.id] = job
+            return job
 
     def _cleanup(self) -> None:
         now = time.time()

@@ -79,3 +79,30 @@ def test_count_active_excludes_terminal_states(store):
     store.create(_job(id="c", owner="o", state=ExecutionJobState.READY))
     store.create(_job(id="d", owner="other", state=ExecutionJobState.QUEUED))
     assert store.count_active("o") == 2
+
+
+def test_mutate_missing_job_returns_none_and_inserts_nothing(store):
+    calls = []
+    result = store.mutate("missing", lambda job: calls.append(job))
+    assert result is None
+    assert calls == []
+    assert store.get("missing") is None
+
+
+def test_mutate_applies_the_function_and_persists_the_mutation(store):
+    job = _job()
+    store.create(job)
+
+    def _bump(j: ExecutionJob) -> None:
+        j.state = ExecutionJobState.READY
+
+    result = store.mutate("j1", _bump)
+    assert result is job
+    assert store.get("j1").state == ExecutionJobState.READY
+
+
+def test_mutate_expired_job_returns_none_and_evicts_it(store):
+    store.create(_job(ttl=-1))
+    result = store.mutate("j1", lambda j: None)
+    assert result is None
+    assert store.get("j1") is None
