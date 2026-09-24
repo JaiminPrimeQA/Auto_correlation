@@ -9,7 +9,9 @@ actual state-machine driving via an injected NewmanRunner.
 
 from __future__ import annotations
 
+import copy
 import time
+from collections.abc import Callable
 
 from ..core.config import Settings
 from ..core.errors import ProblemException, validation_error
@@ -116,7 +118,9 @@ def prepare_run_material(
 
     Precedence (lowest to highest): collection variables < environment
     values < supplied values - the same precedence `create_job` validates
-    against before ever persisting a job.
+    against before ever persisting a job. The merged map is for `run_job`'s
+    destination validation and redaction only; the runner receives just the
+    caller's `supplied_values` (passed to `run_job` separately).
 
     This does real JSON parsing (and thus real work), so - exactly like
     `postman_inspector.inspect_collection` for `/inspect` - a caller in an
@@ -219,7 +223,7 @@ def _run_stage(
     job_id: str,
     store: ExecutionJobStore,
     runner: NewmanRunner,
-    run_input: RunInput,
+    make_run_input: Callable[[], RunInput],
     stage: ExecutionJobState,
     settings: Settings,
 ) -> RunOutcome | None:
@@ -228,11 +232,12 @@ def _run_stage(
     already written the appropriate terminal state (FAILED/CANCELLED) itself.
 
     Shared by both the baseline and comparison stages, which need identical
-    runner-exception and outcome-validation handling.
+    runner-exception and outcome-validation handling. `make_run_input` is
+    called once per stage so every run gets its own fresh, deep-copied input.
     """
     if not _write_state(job_id, store, stage):
         return None
-    outcome = _run_safely(runner, run_input)
+    outcome = _run_safely(runner, make_run_input())
     if outcome is None:
         _write_state(
             job_id, store, ExecutionJobState.FAILED,
@@ -274,6 +279,7 @@ def run_job(
     collection_data: dict,
     environment_data: dict | None,
     variable_values: dict[str, str],
+    supplied_values: dict[str, str],
     folder_id: str | None,
     runner: NewmanRunner,
     store: ExecutionJobStore,
@@ -282,6 +288,11 @@ def run_job(
     resolver: destination_policy.Resolver | None = None,
 ) -> None:
     """Drive a queued execution job through its state machine.
+
+    `variable_values` is the merged collection < environment < supplied map,
+    used ONLY for destination validation and warning redaction.
+    `supplied_values` is the user-supplied subset - the only values handed to
+    the runner (Newman resolves collection/environment variables natively).
 
     Every path ends in a terminal state (or a deliberate no-op when the job is
     missing, not queued, already terminal, or cancelled) so a job never gets
@@ -296,7 +307,8 @@ def run_job(
     try:
         _drive_job(
             job_id, collection_data=collection_data, environment_data=environment_data,
-            variable_values=variable_values, folder_id=folder_id, runner=runner, store=store,
+            variable_values=variable_values, supplied_values=supplied_values, folder_id=folder_id,
+            runner=runner, store=store,
             analysis_store=analysis_store, settings=settings, resolver=resolver,
         )
     except Exception:
@@ -312,6 +324,7 @@ def _drive_job(
     collection_data: dict,
     environment_data: dict | None,
     variable_values: dict[str, str],
+    supplied_values: dict[str, str],
     folder_id: str | None,
     runner: NewmanRunner,
     store: ExecutionJobStore,
@@ -335,17 +348,24 @@ def _drive_job(
         )
         return
 
-    run_input = RunInput(
-        collection_data=collection_data, environment_data=environment_data,
-        variable_values=variable_values, folder_id=folder_id,
-        timeout_seconds=settings.job_run_timeout_seconds,
-    )
+    def _fresh_run_input() -> RunInput:
+        # Deep copies per run: a runner mutating its input during run A can
+        # never reach run B (or the caller's material).
+        return RunInput(
+            collection_data=copy.deepcopy(collection_data),
+            environment_data=copy.deepcopy(environment_data),
+            supplied_values=copy.deepcopy(supplied_values),
+            folder_id=folder_id,
+            timeout_seconds=settings.job_run_timeout_seconds,
+        )
 
-    baseline = _run_stage(job_id, store, runner, run_input, ExecutionJobState.RUNNING_BASELINE, settings)
+    baseline = _run_stage(job_id, store, runner, _fresh_run_input, ExecutionJobState.RUNNING_BASELINE, settings)
     if baseline is None:
         return
 
-    comparison = _run_stage(job_id, store, runner, run_input, ExecutionJobState.RUNNING_COMPARISON, settings)
+    comparison = _run_stage(
+        job_id, store, runner, _fresh_run_input, ExecutionJobState.RUNNING_COMPARISON, settings,
+    )
     if comparison is None:
         return
 

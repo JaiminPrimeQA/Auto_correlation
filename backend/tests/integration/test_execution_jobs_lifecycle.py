@@ -24,7 +24,7 @@ from app.api.v1.execution_jobs import _coerce_supplied_values
 from app.domain.execution_job import ExecutionJob, ExecutionJobState
 from app.main import create_app
 from app.services.fake_newman_runner import canned_fake_runner
-from tests.fixtures.postman_builders import pm_collection, pm_request
+from tests.fixtures.postman_builders import pm_collection, pm_environment, pm_request
 
 
 @pytest.fixture
@@ -88,6 +88,32 @@ def test_create_job_with_default_runner_setting_is_503_and_creates_no_job(defaul
     assert body["code"] == "runner_unavailable"
     assert resp.headers["content-type"].startswith("application/problem+json")
     assert get_job_store().find_by_idempotency_key("testclient", "runner-disabled-probe", window_seconds=600) is None
+
+
+def test_endpoint_hands_the_runner_only_the_supplied_values():
+    runner = canned_fake_runner()
+    app = create_app()
+    app.dependency_overrides[get_newman_runner] = lambda: runner
+    collection = pm_collection(
+        "Threaded",
+        [pm_request("Ping", "GET", "https://{{host}}/ping?t={{token}}&e={{env_var}}")],
+        variables=[{"key": "host", "value": "93.184.216.34"}],
+    )
+    environment = pm_environment("Env", {"env_var": "from-env"})
+    resp = TestClient(app).post(
+        "/api/v1/execution-jobs",
+        data={"confirm": "true", "supplied_values_json": json.dumps({"token": "supplied-tok"})},
+        files={
+            "collection": ("c.json", json.dumps(collection).encode(), "application/json"),
+            "environment": ("e.json", json.dumps(environment).encode(), "application/json"),
+        },
+    )
+    assert resp.status_code == 202
+    assert len(runner.calls) == 2
+    for call in runner.calls:
+        assert call.supplied_values == {"token": "supplied-tok"}
+        assert call.environment_data is not None and call.environment_data["name"] == "Env"
+    assert runner.calls[0].collection_data is not runner.calls[1].collection_data
 
 
 def test_create_job_rejects_without_confirmation(client):

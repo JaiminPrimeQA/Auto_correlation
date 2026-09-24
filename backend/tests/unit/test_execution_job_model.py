@@ -37,5 +37,5 @@ def test_execution_job_is_active_for_non_terminal_states_only():
 
 def test_run_input_and_run_outcome_construct():
     RunInput(collection_data={"info": {"name": "x"}, "item": []}, environment_data=None,
-              variable_values={"host": "api.example.com"}, folder_id=None, timeout_seconds=300)
+              supplied_values={"host": "api.example.com"}, folder_id=None, timeout_seconds=300)
     RunOutcome(success=True, report_bytes=b'{"run": {}}', error_code=None, error_detail=None)

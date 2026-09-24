@@ -34,12 +34,14 @@ def _newman_report(token: str) -> bytes:
 def _run(
     job, runner, store, *,
     analysis_store=None, settings=None, collection_data=None, resolver=None, variable_values=None,
+    supplied_values=None, environment_data=None,
 ):
     run_job(
         job.id,
         collection_data=collection_data or {"info": {"name": "Demo"}, "item": []},
-        environment_data=None,
+        environment_data=environment_data,
         variable_values=variable_values if variable_values is not None else {},
+        supplied_values=supplied_values if supplied_values is not None else {},
         folder_id=None,
         runner=runner,
         store=store,
@@ -132,7 +134,7 @@ def test_missing_job_is_a_noop():
     runner = FakeNewmanRunner([])
     run_job(
         "does-not-exist", collection_data={"info": {"name": "Demo"}, "item": []}, environment_data=None,
-        variable_values={}, folder_id=None, runner=runner, store=store,
+        variable_values={}, supplied_values={}, folder_id=None, runner=runner, store=store,
         analysis_store=InMemorySessionStore(ttl_seconds=60), settings=Settings(),
     )
     assert store.get("does-not-exist") is None
@@ -510,3 +512,103 @@ def test_destination_validation_warnings_redact_variable_values():
     assert final.error_code == "destination_validation_failed"
     assert not any("localhost" in w for w in final.warnings)
     assert any("{{host}}" in w for w in final.warnings)
+
+
+# --- F3: run isolation and runner input ---
+
+
+def _dict_ids(obj) -> set[int]:
+    """ids of every dict/list reachable from `obj` (a RunInput's mutable parts)."""
+    found: set[int] = set()
+    stack = [obj]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            found.add(id(cur))
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            found.add(id(cur))
+            stack.extend(cur)
+    return found
+
+
+def _run_input_ids(run_input: RunInput) -> set[int]:
+    return (
+        _dict_ids(run_input.collection_data)
+        | _dict_ids(run_input.environment_data)
+        | _dict_ids(run_input.supplied_values)
+    )
+
+
+class _MutatingRunner:
+    """Mutates everything it is handed on run 1, then records a snapshot of what
+    it receives on run 2 - so leakage between runs is directly observable.
+    """
+
+    def __init__(self, outcomes) -> None:
+        self.outcomes = list(outcomes)
+        self.calls: list[RunInput] = []
+        self.second_run_snapshot: dict | None = None
+
+    def run(self, run_input: RunInput, **_kwargs) -> RunOutcome:
+        self.calls.append(run_input)
+        if len(self.calls) == 1:
+            run_input.collection_data["info"]["name"] = "MUTATED"
+            run_input.collection_data["item"].append({"name": "injected"})
+            assert run_input.environment_data is not None
+            run_input.environment_data["values"].append({"key": "evil", "value": "x"})
+            run_input.supplied_values["token"] = "MUTATED"
+        else:
+            self.second_run_snapshot = json.loads(json.dumps({
+                "collection": run_input.collection_data,
+                "environment": run_input.environment_data,
+                "supplied": run_input.supplied_values,
+            }))
+        return self.outcomes.pop(0)
+
+
+def test_each_run_gets_a_fresh_deep_copy_of_its_input():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = {"info": {"name": "Demo"}, "item": []}
+    environment = {"name": "Env", "values": [{"key": "a", "value": "b"}]}
+    supplied = {"token": "tok_original"}
+    original = json.loads(json.dumps({"collection": collection, "environment": environment, "supplied": supplied}))
+    runner = _MutatingRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    _run(job, runner, store, collection_data=collection, environment_data=environment, supplied_values=supplied)
+
+    assert store.get(job.id).state == ExecutionJobState.READY
+    assert len(runner.calls) == 2
+    # Run A's mutations never reach Run B ...
+    assert runner.second_run_snapshot == original
+    # ... because the two runs share no dict/list objects at all ...
+    assert _run_input_ids(runner.calls[0]).isdisjoint(_run_input_ids(runner.calls[1]))
+    # ... nor with the caller's own material.
+    caller_ids = _dict_ids(collection) | _dict_ids(environment) | _dict_ids(supplied)
+    assert _run_input_ids(runner.calls[0]).isdisjoint(caller_ids)
+    assert _run_input_ids(runner.calls[1]).isdisjoint(caller_ids)
+    assert {"collection": collection, "environment": environment, "supplied": supplied} == original
+
+
+def test_run_input_carries_only_the_supplied_values():
+    """Newman resolves collection/environment variables natively from
+    collection_data/environment_data; the merged map is for destination
+    validation and redaction only and never reaches the runner.
+    """
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    _run(
+        job, runner, store,
+        variable_values={"host": "93.184.216.34", "env_only": "e-value", "token": "supplied-token"},
+        supplied_values={"token": "supplied-token"},
+    )
+    assert store.get(job.id).state == ExecutionJobState.READY
+    assert [c.supplied_values for c in runner.calls] == [{"token": "supplied-token"}] * 2
+    assert not hasattr(runner.calls[0], "variable_values")

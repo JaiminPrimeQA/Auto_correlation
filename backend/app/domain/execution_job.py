@@ -31,15 +31,34 @@ class ExecutionJobState(str, Enum):
 
 @dataclass
 class RunInput:
+    """Everything one Newman run needs. `run_job` builds a fresh, deep-copied
+    RunInput per run, so a runner may mutate it freely without affecting any
+    other run.
+
+    `supplied_values` holds ONLY the user-supplied runtime values. Newman
+    resolves collection and environment variables natively from
+    `collection_data` / `environment_data`; the merged collection <
+    environment < supplied map is used only for destination validation and
+    redaction and never reaches the runner.
+    """
+
     collection_data: dict
     environment_data: dict | None
-    variable_values: dict[str, str]
+    supplied_values: dict[str, str]
     folder_id: str | None
     timeout_seconds: int
 
 
 @dataclass
 class RunOutcome:
+    """The result of one Newman run.
+
+    Contract: `error_detail` is copied verbatim onto the job record and shown
+    to the client, so it MUST be a sanitized, user-safe message - never a
+    secret, a supplied/resolved variable value, or raw Newman/process stderr.
+    Runners map raw failures to a fixed message plus a stable `error_code`.
+    """
+
     success: bool
     report_bytes: bytes | None = None
     error_code: str | None = None

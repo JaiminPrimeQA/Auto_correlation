@@ -161,6 +161,7 @@ async def create_execution_job(
             collection_data=collection_data,
             environment_data=environment_data,
             variable_values=variable_values,
+            supplied_values=supplied_values,
             folder_id=folder_id,
             runner=runner,
             store=job_store,

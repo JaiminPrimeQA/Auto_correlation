@@ -6,7 +6,7 @@ from app.services.fake_newman_runner import FakeNewmanRunner
 
 def _run_input(**overrides) -> RunInput:
     base = dict(collection_data={"info": {"name": "x"}, "item": []}, environment_data=None,
-                variable_values={}, folder_id=None, timeout_seconds=300)
+                supplied_values={}, folder_id=None, timeout_seconds=300)
     base.update(overrides)
     return RunInput(**base)
 
@@ -20,7 +20,7 @@ def test_returns_outcomes_in_order():
 
 def test_records_every_call():
     runner = FakeNewmanRunner([RunOutcome(success=True), RunOutcome(success=True)])
-    a, b = _run_input(folder_id="auth"), _run_input(variable_values={"host": "x"})
+    a, b = _run_input(folder_id="auth"), _run_input(supplied_values={"host": "x"})
     runner.run(a)
     runner.run(b)
     assert runner.calls == [a, b]
