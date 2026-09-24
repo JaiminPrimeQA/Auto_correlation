@@ -26,12 +26,15 @@ def get_rate_limiter() -> RateLimiter:
     return RateLimiter(settings.rate_limit_requests, settings.rate_limit_window_seconds)
 
 
+def get_owner_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 def enforce_rate_limit(request: Request, settings: Settings = Depends(get_settings)) -> None:
     if not settings.rate_limit_enabled:
         return
     limiter = get_rate_limiter()
-    client = request.client.host if request.client else "unknown"
-    if not limiter.allow(client):
+    if not limiter.allow(get_owner_key(request)):
         raise rate_limited("Too many requests; slow down.")
 
 
@@ -46,10 +49,6 @@ def require_analysis(analysis_id: str, store: SessionStore = Depends(get_store))
 def get_job_store() -> ExecutionJobStore:
     settings = get_settings()
     return InMemoryExecutionJobStore(ttl_seconds=settings.job_ttl_seconds)
-
-
-def get_owner_key(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
 
 
 def require_owned_job(
