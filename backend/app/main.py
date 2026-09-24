@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .api.v1 import analyses, downloads, rules
+from .api.v1 import analyses, downloads, execution_jobs, rules
 from .core.config import get_settings
 from .core.errors import (
     ProblemException,
@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(analyses.router, prefix=settings.api_prefix)
     app.include_router(rules.router, prefix=settings.api_prefix)
     app.include_router(downloads.router, prefix=settings.api_prefix)
+    app.include_router(execution_jobs.router, prefix=settings.api_prefix)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:

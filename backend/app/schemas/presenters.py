@@ -12,6 +12,7 @@ from ..domain.models import (
     ValueInsight,
     ValueOccurrence,
 )
+from ..domain.postman_models import CollectionInspection, PostmanFolder, PostmanVariable, UnsupportedFeature
 from ..repositories.analysis_store import Analysis
 from ..utils.masking import mask_if_sensitive
 
@@ -184,3 +185,29 @@ def _is_blocked(analysis: Analysis) -> bool:
     if analysis.baseline_run.health.blockers:
         return True
     return False
+
+
+def postman_variable_dto(v: PostmanVariable) -> dict:
+    return {"name": v.name, "source": v.source.value, "sensitive": v.sensitive, "locations": v.locations}
+
+
+def postman_folder_dto(f: PostmanFolder) -> dict:
+    return {"id": f.id, "name": f.name, "path": f.path, "request_count": f.request_count}
+
+
+def postman_unsupported_feature_dto(u: UnsupportedFeature) -> dict:
+    return {"kind": u.kind.value, "detail": u.detail, "location": u.location}
+
+
+def postman_inspection_dto(inspection: CollectionInspection) -> dict:
+    return {
+        "collection_name": inspection.collection_name,
+        "folders": [postman_folder_dto(f) for f in inspection.folders],
+        "variables": [postman_variable_dto(v) for v in inspection.variables],
+        "unresolved_variable_names": inspection.unresolved_variable_names,
+        "request_count_estimate": inspection.request_count_estimate,
+        "target_domains": inspection.target_domains,
+        "domain_warnings": inspection.domain_warnings,
+        "unsupported_features": [postman_unsupported_feature_dto(u) for u in inspection.unsupported_features],
+        "warnings": inspection.warnings,
+    }
