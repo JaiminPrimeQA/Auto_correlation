@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 from ..domain.enums import ExtractorMethod, LocationType
-from ..domain.models import NormalizedRun, ValueOccurrence
+from ..domain.models import NormalizedExecution, NormalizedRun, ValueOccurrence
 from ..utils.naming import fields_are_equivalent, is_placeholder_value, normalize_field_name
 from .correlation_engine import _extractor_for, _match_consumer
 from .value_indexer import index_request_sinks, index_response_sources
@@ -29,7 +29,7 @@ def response_sources(execution) -> list[ValueOccurrence]:
 
 def find_producer_source(
     run: NormalizedRun, execution_id: str, location_type: str, canonical_path: str
-) -> tuple[object, ValueOccurrence] | None:
+) -> tuple[NormalizedExecution, ValueOccurrence | None] | None:
     """Locate the producer execution and the selected response value."""
     for e in run.executions:
         if e.id == execution_id:
@@ -41,11 +41,11 @@ def find_producer_source(
 
 
 def find_consumers(
-    run: NormalizedRun, producer_exec, producer_src: ValueOccurrence
-) -> list[tuple[object, ValueOccurrence, str | None]]:
+    run: NormalizedRun, producer_exec: NormalizedExecution, producer_src: ValueOccurrence
+) -> list[tuple[NormalizedExecution, ValueOccurrence, str | None]]:
     """Return (consumer_execution, sink, wrapper) for every later request that
     contains the producer value."""
-    out: list[tuple[object, ValueOccurrence, str | None]] = []
+    out: list[tuple[NormalizedExecution, ValueOccurrence, str | None]] = []
     value = producer_src.raw_value
     if not value:
         return out
@@ -65,9 +65,9 @@ def is_first_object_source(producer_src: ValueOccurrence) -> bool:
 
 
 def find_alias_consumers(
-    run: NormalizedRun, producer_exec, producer_src: ValueOccurrence,
+    run: NormalizedRun, producer_exec: NormalizedExecution, producer_src: ValueOccurrence,
     allow_array_row: bool = False,
-) -> list[tuple[object, ValueOccurrence, str | None]]:
+) -> list[tuple[NormalizedExecution, ValueOccurrence, str | None]]:
     """Find later requests that reuse the producer field by NAME (not exact value).
 
     This is what lets the engine correlate consumers the exact-value matcher
@@ -82,7 +82,7 @@ def find_alias_consumers(
     triggers a blind match. Callers must ensure the producer is the unique
     earlier producer for this field name before trusting a placeholder match.
     """
-    out: list[tuple[object, ValueOccurrence, str | None]] = []
+    out: list[tuple[NormalizedExecution, ValueOccurrence, str | None]] = []
     p_name = _field_name(producer_src)
     p_norm = normalize_field_name(p_name)
     if len(p_norm) < 4 or (not is_first_object_source(producer_src) and not allow_array_row):
@@ -103,8 +103,8 @@ def find_alias_consumers(
 
 
 def find_name_matches(
-    run: NormalizedRun, producer_exec, producer_src: ValueOccurrence
-) -> list[tuple[object, ValueOccurrence, str, str]]:
+    run: NormalizedRun, producer_exec: NormalizedExecution, producer_src: ValueOccurrence
+) -> list[tuple[NormalizedExecution, ValueOccurrence, str, str]]:
     """Suggest correlations by matching FIELD NAMES (not values).
 
     Catches the case where a producer field and a later request field share a
@@ -120,7 +120,7 @@ def find_name_matches(
     if len(p_norm) < 4:
         return []
     value = producer_src.raw_value
-    out: list[tuple[object, ValueOccurrence, str, str]] = []
+    out: list[tuple[NormalizedExecution, ValueOccurrence, str, str]] = []
     for e in run.executions:
         if e.original_index <= producer_exec.original_index:
             continue

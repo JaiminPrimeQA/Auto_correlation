@@ -86,27 +86,30 @@ def auto_correlate(run: NormalizedRun, settings: Settings) -> list[CorrelationRu
             name = _field_name(sink)
             if len(normalize_field_name(name)) < 4:
                 continue
-            matches = [src for src in sources if fields_are_equivalent(_field_name(src), name)]
+            matches = [m for m in sources if fields_are_equivalent(_field_name(m), name)]
             by_array: dict[tuple[str, str], list[ValueOccurrence]] = defaultdict(list)
-            candidates = []
-            for src in matches:
-                row = _row(src)
+            field_candidates: list[ValueOccurrence] = []
+            for m in matches:
+                row = _row(m)
                 if row:
-                    by_array[(src.execution_id, row[0])].append(src)
+                    by_array[(m.execution_id, row[0])].append(m)
                 else:
-                    candidates.append(src)
+                    field_candidates.append(m)
             ambiguous = False
             for group, members in by_array.items():
                 if len(members) > 1:
                     chosen = selected_rows[group]
-                    members = [src for src in members if _row(src)[1] in chosen] if len(chosen) == 1 else []
+                    members = (
+                        [m for m in members if (row := _row(m)) is not None and row[1] in chosen]
+                        if len(chosen) == 1 else []
+                    )
                 if len(members) != 1:
                     ambiguous = True
                     break
-                candidates.extend(members)
-            if not ambiguous and len({src.raw_value for src in candidates}) == 1:
-                src = min(candidates, key=lambda source: source.execution_index)
-                add(src, sink, None, True)
+                field_candidates.extend(members)
+            if not ambiguous and len({m.raw_value for m in field_candidates}) == 1:
+                chosen_src = min(field_candidates, key=lambda source: source.execution_index)
+                add(chosen_src, sink, None, True)
 
         # The current response only becomes available AFTER its request.
         if _response_usable(execution):

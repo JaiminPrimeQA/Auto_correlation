@@ -41,10 +41,10 @@ def inspect_collection(
         environment_data = parsed_env.data
         warnings.extend(parsed_env.warnings)
 
-    collection_variables = {
-        v.get("key"): str(v.get("value", ""))
+    collection_variables: dict[str, str] = {
+        key: str(v.get("value", ""))
         for v in collection_data.get("variable", [])
-        if isinstance(v, dict) and v.get("key")
+        if isinstance(v, dict) and isinstance(key := v.get("key"), str) and key
     }
 
     folders = extract_folders(collection_data)

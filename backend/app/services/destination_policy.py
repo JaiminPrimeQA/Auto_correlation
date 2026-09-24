@@ -70,7 +70,7 @@ def default_resolver(hostname: str) -> list[str]:
         infos = socket.getaddrinfo(hostname, None)
     except OSError as exc:
         raise validation_error(f"Could not resolve host '{hostname}'.") from exc
-    return sorted({info[4][0] for info in infos})
+    return sorted({str(info[4][0]) for info in infos})
 
 
 def validate_destination(url: str, *, settings: Settings, resolver: Resolver | None = None) -> None:

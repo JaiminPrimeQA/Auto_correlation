@@ -43,7 +43,9 @@ def _from_url(url: object, location: str) -> list[VariableReference]:
 
 def _from_headers(headers: object, location: str) -> list[VariableReference]:
     refs: list[VariableReference] = []
-    for h in headers or []:
+    if not isinstance(headers, list):
+        return refs
+    for h in headers:
         if isinstance(h, dict):
             refs += [VariableReference(n, f"{location} > header") for n in _names_in(h.get("value"))]
     return refs

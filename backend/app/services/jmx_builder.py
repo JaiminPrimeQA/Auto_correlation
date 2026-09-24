@@ -13,6 +13,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import cast
 
 from ..domain.enums import BodyMode, ExtractorMethod, LocationType, RuleState  # noqa: F401
 from ..domain.models import (
@@ -120,7 +121,7 @@ class JmxBuilder:
         if comparison_run is not None:
             by_id = {e.id: e for e in comparison_run.executions}
             for pair in align_runs(sequence_run, comparison_run).pairs:
-                other = by_id.get(pair.comparison_execution_id)
+                other = by_id.get(pair.comparison_execution_id) if pair.comparison_execution_id is not None else None
                 if other is not None and other.response is not None:
                     comparison_bodies[pair.baseline_execution_id] = other.response.parsed_body
 
@@ -298,7 +299,7 @@ class JmxBuilder:
         _bp(cm, "useExpires", True)
         _bp(cm, "CacheManager.controlledByThread", False)
 
-    def _insert_udv(self, tg_tree: ET.Element, entries: list[tuple[str, str]]) -> None:
+    def _insert_udv(self, tg_tree: ET.Element, entries: list[tuple[str, str, str]]) -> None:
         args = ET.Element("Arguments", {
             "guiclass": "ArgumentsPanel", "testclass": "Arguments",
             "testname": "User Defined Variables", "enabled": "true",
@@ -584,12 +585,12 @@ class JmxBuilder:
         for rule, con in subs:
             token = f"${{{rule.variable_name}}}"
             expected = (con.wrapper or "") + token
-            values = []
+            values: list[object] = []
             if con.location_type == LocationType.JSON_BODY:
                 values = jsonpath_values(req.parsed_body, con.canonical_path)
             elif con.location_type == LocationType.PATH:
                 idx = int(con.canonical_path.strip("[]"))
-                values = req.path_segments[idx:idx + 1]
+                values = cast("list[object]", req.path_segments[idx:idx + 1])
             elif con.location_type in (LocationType.QUERY, LocationType.HEADER, LocationType.FORM):
                 pairs = {LocationType.QUERY: req.query, LocationType.HEADER: req.headers, LocationType.FORM: req.form_data}[con.location_type]
                 values = [p.value for p in pairs if p.name == (con.key or con.canonical_path)]

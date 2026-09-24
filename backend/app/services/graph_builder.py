@@ -144,11 +144,11 @@ def build_graph(analysis: Analysis) -> dict:
 
     nodes: list[dict] = []
     folders: set[str] = set()
-    for e in run.executions:
-        folder = _folder(e)
+    for ex in run.executions:
+        folder = _folder(ex)
         folders.add(folder)
-        prod = sorted(produces.get(e.id, set()))
-        cons = sorted(consumes.get(e.id, set()))
+        prod = sorted(produces.get(ex.id, set()))
+        cons = sorted(consumes.get(ex.id, set()))
         if prod and cons:
             role = "both"
         elif prod:
@@ -159,13 +159,13 @@ def build_graph(analysis: Analysis) -> dict:
             role = "none"
         nodes.append(
             {
-                "id": e.id,
-                "index": e.original_index,
-                "name": e.item_name,
-                "method": e.method,
-                "path": _short_path(e),
+                "id": ex.id,
+                "index": ex.original_index,
+                "name": ex.item_name,
+                "method": ex.method,
+                "path": _short_path(ex),
                 "folder": folder,
-                "status_code": e.response.code if e.response is not None else None,
+                "status_code": ex.response.code if ex.response is not None else None,
                 "role": role,
                 "produces": prod,
                 "consumes": cons,

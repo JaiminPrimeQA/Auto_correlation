@@ -5,7 +5,7 @@ import pytest
 from app.core.config import Settings
 from app.core.errors import ProblemException
 from app.services.postman_parser import parse_collection, parse_environment
-from tests.fixtures.postman_builders import pm_collection, pm_environment, pm_folder, pm_request
+from tests.fixtures.postman_builders import pm_collection, pm_environment, pm_request
 
 
 def _raw(obj) -> bytes:

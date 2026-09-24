@@ -162,7 +162,9 @@ def _execute(
             executed=True, return_code=None, timed_out=True,
             jtl_path=jtl_path if jtl_path.exists() else None,
             log_path=log_path if log_path.exists() else None,
-            stdout=exc.stdout or "", stderr=exc.stderr or "", error="timed out",
+            stdout=exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
+            stderr=exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or ""),
+            error="timed out",
         )
     except (OSError, ValueError) as exc:
         return RunOutcome(
