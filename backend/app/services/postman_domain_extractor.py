@@ -34,7 +34,8 @@ def _iter_request_urls(items: list, path: str = "") -> list[tuple[str, str]]:
     for it in items:
         if not isinstance(it, dict):
             continue
-        here = f"{path} > {it.get('name', 'unnamed')}" if path else it.get("name", "unnamed")
+        name = str(it.get("name", "unnamed"))
+        here = f"{path} > {name}" if path else name
         if isinstance(it.get("item"), list):
             out.extend(_iter_request_urls(it["item"], here))
             continue
@@ -58,6 +59,12 @@ def extract_target_domains(
 ) -> DomainReport:
     resolved: set[str] = set()
     warnings: list[str] = []
+    # Per-unique-host cache: None means "allowed", a string is the warning
+    # detail to reuse for every subsequent occurrence of that host. This
+    # avoids redundant (blocking) DNS lookups when a collection references
+    # the same host many times (spec: Important #1).
+    host_outcomes: dict[str, str | None] = {}
+    cap_warning_added = False
     for location, raw_url in _iter_request_urls(collection_data.get("item", [])):
         substituted = _substitute(raw_url, environment_values)
         host = destination_policy.extract_hostname(substituted)
@@ -69,10 +76,24 @@ def extract_target_domains(
                 "supply a value to validate its destination before execution."
             )
             continue
-        try:
-            destination_policy.validate_destination(substituted, settings=settings, resolver=resolver)
-        except ProblemException as exc:
-            warnings.append(f"'{location}': {exc.detail}")
-            continue
-        resolved.add(host)
+        if host not in host_outcomes:
+            if len(host_outcomes) >= settings.max_target_hosts_to_validate:
+                if not cap_warning_added:
+                    warnings.append(
+                        f"Target-domain validation stopped after {settings.max_target_hosts_to_validate} "
+                        "distinct hosts; remaining targets were not checked."
+                    )
+                    cap_warning_added = True
+                continue
+            try:
+                destination_policy.validate_destination(substituted, settings=settings, resolver=resolver)
+            except ProblemException as exc:
+                host_outcomes[host] = exc.detail
+            else:
+                host_outcomes[host] = None
+        detail = host_outcomes[host]
+        if detail is None:
+            resolved.add(host)
+        else:
+            warnings.append(f"'{location}': {detail}")
     return DomainReport(resolved_domains=sorted(resolved), warnings=warnings)

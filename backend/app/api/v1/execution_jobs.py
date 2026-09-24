@@ -9,6 +9,7 @@ of the parent design and are not implemented here.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from ...core.config import Settings, get_settings
 from ...core.logging import get_logger
@@ -31,7 +32,8 @@ async def inspect(
     environment_raw = await environment.read() if environment is not None else None
     environment_filename = environment.filename if environment is not None else None
 
-    inspection = inspect_collection(
+    inspection = await run_in_threadpool(
+        inspect_collection,
         collection_raw=collection_raw,
         collection_filename=collection.filename or "collection.json",
         environment_raw=environment_raw,

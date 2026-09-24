@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # --- Postman collection intake limits (Phase 1: inspection only) ---
     max_collection_bytes: int = 10 * MIB
     max_environment_bytes: int = 2 * MIB
+    # Distinct hosts validated against the destination policy per inspection.
+    # Protects the (blocking, per-host) DNS resolution path from a collection
+    # that references an unbounded number of distinct hosts.
+    max_target_hosts_to_validate: int = 50
 
     # --- Public-HTTPS destination policy ---
     # Never true in production regardless of this flag; see `https_only`.
