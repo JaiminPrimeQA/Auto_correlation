@@ -73,3 +73,29 @@ def test_rejects_url_with_no_hostname():
     with pytest.raises(ProblemException) as exc:
         validate_destination("https:///no-host", settings=Settings())
     assert exc.value.code == "validation_error"
+
+
+def test_malformed_hostname_raises_clean_problem_exception_not_unicode_error():
+    # A hostname with an empty label (double dot) makes socket.getaddrinfo raise
+    # UnicodeEncodeError via the idna codec; default_resolver must translate
+    # this into a normal ProblemException instead of letting it escape.
+    with pytest.raises(ProblemException) as exc:
+        validate_destination("https://api..example.com/", settings=Settings())
+    assert exc.value.code == "validation_error"
+
+
+def test_blocks_backslash_in_authority_as_host_confusion():
+    # Python's urlsplit resolves the hostname here as 'evil.com', but Node.js
+    # (which Newman/postman-request runs on) has historically treated '\' as
+    # equivalent to '/', so the actual request would go to 127.0.0.1 instead.
+    # This ambiguity must be blocked outright rather than silently mis-parsed.
+    with pytest.raises(ProblemException) as exc:
+        validate_destination(r"https://127.0.0.1\@evil.com/", settings=Settings())
+    assert exc.value.code == "blocked_destination"
+
+
+def test_normal_url_still_allowed_after_backslash_guard():
+    def fake_resolver(hostname: str) -> list[str]:
+        return ["93.184.216.34"]
+
+    validate_destination("https://api.example.com/path", settings=Settings(), resolver=fake_resolver)

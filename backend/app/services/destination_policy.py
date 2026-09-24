@@ -68,13 +68,33 @@ Resolver = Callable[[str], list[str]]
 def default_resolver(hostname: str) -> list[str]:
     try:
         infos = socket.getaddrinfo(hostname, None)
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         raise validation_error(f"Could not resolve host '{hostname}'.") from exc
     return sorted({str(info[4][0]) for info in infos})
 
 
+def _authority_section(url: str) -> str:
+    """Return the raw authority substring (host[:port]) between '://' and the
+    next path/query/fragment delimiter, without any parsing/normalization.
+    """
+    marker = "://"
+    idx = url.find(marker)
+    if idx == -1:
+        return ""
+    start = idx + len(marker)
+    end = len(url)
+    for ch in "/?#":
+        pos = url.find(ch, start)
+        if pos != -1:
+            end = min(end, pos)
+    return url[start:end]
+
+
 def validate_destination(url: str, *, settings: Settings, resolver: Resolver | None = None) -> None:
     resolve = resolver or default_resolver
+    authority = _authority_section(url)
+    if any(ch == "\\" or ch.isspace() or ord(ch) < 0x20 for ch in authority):
+        raise blocked_destination("URL authority contains unsupported characters.")
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
     if scheme not in ("http", "https"):
