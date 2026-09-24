@@ -95,3 +95,53 @@ def test_caps_distinct_hosts_validated_and_warns_once():
     assert report.resolved_domains == ["host-a.example.com", "host-b.example.com"]
     cap_warnings = [w for w in report.warnings if "stopped after 2 distinct hosts" in w]
     assert len(cap_warnings) == 1
+
+
+def test_repeat_host_still_checks_each_urls_authority():
+    calls: list[str] = []
+
+    def counting_resolver(hostname: str) -> list[str]:
+        calls.append(hostname)
+        return ["93.184.216.34"]
+
+    requests = [
+        pm_request("Clean", "GET", "https://evil.com/clean"),
+        pm_request("Blocked", "GET", "https://127.0.0.1\\@evil.com/private"),
+    ]
+    report = extract_target_domains(
+        pm_collection("Demo", requests),
+        environment_values={},
+        settings=Settings(),
+        resolver=counting_resolver,
+    )
+
+    assert calls == ["evil.com"]
+    assert report.resolved_domains == ["evil.com"]
+    assert len(report.warnings) == 1
+    assert "unsupported characters" in report.warnings[0]
+    assert "Blocked" in report.warnings[0]
+
+
+def test_repeat_host_still_checks_each_urls_scheme():
+    calls: list[str] = []
+
+    def counting_resolver(hostname: str) -> list[str]:
+        calls.append(hostname)
+        return ["93.184.216.34"]
+
+    requests = [
+        pm_request("Blocked", "GET", "http://api.example.com/insecure"),
+        pm_request("Clean", "GET", "https://api.example.com/secure"),
+    ]
+    report = extract_target_domains(
+        pm_collection("Demo", requests),
+        environment_values={},
+        settings=Settings(),
+        resolver=counting_resolver,
+    )
+
+    assert calls == ["api.example.com"]
+    assert report.resolved_domains == ["api.example.com"]
+    assert len(report.warnings) == 1
+    assert "Plain HTTP" in report.warnings[0]
+    assert "Blocked" in report.warnings[0]
