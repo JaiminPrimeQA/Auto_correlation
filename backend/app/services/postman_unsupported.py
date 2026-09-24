@@ -67,6 +67,10 @@ def _walk(items: list, path: str) -> list[UnsupportedFeature]:
         name = it.get("name", "unnamed")
         here = f"{path} > {name}" if path else name
         if isinstance(it.get("item"), list):
+            findings.extend(_script_findings(it, here))
+            folder_auth = it.get("auth")
+            if isinstance(folder_auth, dict):
+                findings.extend(_auth_findings(folder_auth, here))
             findings.extend(_walk(it["item"], here))
             continue
         findings.extend(_script_findings(it, here))
@@ -98,6 +102,10 @@ def _walk(items: list, path: str) -> list[UnsupportedFeature]:
 
 def detect_unsupported_features(collection_data: dict, environment_data: dict | None = None) -> list[UnsupportedFeature]:
     findings = _walk(collection_data.get("item", []), "")
+    findings.extend(_script_findings(collection_data, "collection"))
+    collection_auth = collection_data.get("auth")
+    if isinstance(collection_auth, dict):
+        findings.extend(_auth_findings(collection_auth, "collection"))
     for source_name, data in (("collection", collection_data), ("environment", environment_data or {})):
         if isinstance(data, dict) and ("clientCertificates" in data or "certificate" in data):
             findings.append(UnsupportedFeature(

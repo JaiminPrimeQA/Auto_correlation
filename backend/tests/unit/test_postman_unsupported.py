@@ -1,7 +1,7 @@
 # backend/tests/unit/test_postman_unsupported.py
 from app.domain.enums import UnsupportedFeatureKind
 from app.services.postman_unsupported import detect_unsupported_features
-from tests.fixtures.postman_builders import pm_collection, pm_request
+from tests.fixtures.postman_builders import pm_collection, pm_folder, pm_request
 
 
 def test_flags_file_form_field():
@@ -60,3 +60,23 @@ def test_flags_client_certificates_on_collection_or_environment():
 def test_supported_collection_has_no_findings():
     request = pm_request("Ping", "GET", "https://api.example.com/ping")
     assert detect_unsupported_features(pm_collection("Demo", [request])) == []
+
+
+def test_flags_folder_level_auth_as_interactive():
+    request = pm_request("Ping", "GET", "https://api.example.com/ping")
+    folder = pm_folder("Secure Folder", [request])
+    folder["auth"] = {"type": "ntlm"}
+    findings = detect_unsupported_features(pm_collection("Demo", [folder]))
+    assert findings[0].kind == UnsupportedFeatureKind.INTERACTIVE_AUTH
+    assert findings[0].location == "Secure Folder"
+
+
+def test_flags_collection_root_pm_send_request():
+    request = pm_request("Ping", "GET", "https://api.example.com/ping")
+    collection = pm_collection("Demo", [request])
+    collection["event"] = [
+        {"listen": "prerequest", "script": {"exec": ["pm.sendRequest('https://x', function(e,r){});"]}},
+    ]
+    findings = detect_unsupported_features(collection)
+    assert findings[0].kind == UnsupportedFeatureKind.DYNAMIC_REQUEST_CONSTRUCTION
+    assert findings[0].location == "collection"
