@@ -52,3 +52,13 @@ def test_no_variables_returns_empty_list():
     request = pm_request("Ping", "GET", "https://api.example.com/ping")
     collection = pm_collection("Demo", [request])
     assert extract_variable_references(collection) == []
+
+
+def test_from_headers_ignores_malformed_non_list_header_field():
+    # A malformed collection could have a non-list `header` field (e.g. hand-edited
+    # or produced by a buggy exporter). Extraction must degrade gracefully to "no
+    # header references" rather than raising TypeError: '...' object is not iterable.
+    request = pm_request("Ping", "GET", "https://api.example.com/ping")
+    request["request"]["header"] = 5
+    collection = pm_collection("Demo", [request])
+    assert extract_variable_references(collection) == []
