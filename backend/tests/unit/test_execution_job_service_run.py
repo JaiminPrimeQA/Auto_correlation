@@ -1,0 +1,425 @@
+import json
+import time
+
+from app.core.config import Settings
+from app.core.errors import validation_error
+from app.domain.execution_job import ExecutionJob, ExecutionJobState, RunInput, RunOutcome
+from app.repositories.analysis_store import InMemorySessionStore
+from app.repositories.execution_job_store import InMemoryExecutionJobStore
+from app.services import analysis_service
+from app.services.execution_job_service import run_job
+from app.services.fake_newman_runner import FakeNewmanRunner
+from tests.fixtures import builders as b
+from tests.fixtures.postman_builders import pm_collection, pm_request
+
+
+def _queued_job(store) -> ExecutionJob:
+    job = ExecutionJob(
+        id="job_1", owner_key="127.0.0.1", collection_name="Demo",
+        created_at=time.time(), expires_at=time.time() + 60,
+    )
+    store.create(job)
+    return job
+
+
+def _newman_report(token: str) -> bytes:
+    return json.dumps(b.report("Login Flow", [
+        b.execution("Login", "POST", "https://api.example.com/login",
+                    resp_body={"token": token}, position=0),
+        b.execution("Profile", "GET", "https://api.example.com/me",
+                    req_headers=[b.header("Authorization", f"Bearer {token}")], position=1),
+    ])).encode()
+
+
+def _run(job, runner, store, *, analysis_store=None, settings=None, collection_data=None, resolver=None):
+    run_job(
+        job.id,
+        collection_data=collection_data or {"info": {"name": "Demo"}, "item": []},
+        environment_data=None,
+        variable_values={},
+        folder_id=None,
+        runner=runner,
+        store=store,
+        analysis_store=analysis_store or InMemorySessionStore(ttl_seconds=60),
+        settings=settings or Settings(),
+        resolver=resolver,
+    )
+
+
+# --- Happy path / basic failure mapping (Tasks 6 + 7 briefs) ---
+
+
+def test_successful_run_reaches_ready_with_an_analysis_id():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.READY
+    assert final.analysis_id is not None
+    assert final.stage_history == [
+        "validating", "running_baseline", "running_comparison", "analyzing", "ready",
+    ]
+    assert len(runner.calls) == 2
+
+
+def test_successful_run_persists_analysis_into_the_analysis_store():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    analysis_store = InMemorySessionStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    _run(job, runner, store, analysis_store=analysis_store)
+    final = store.get(job.id)
+    persisted = analysis_store.get(final.analysis_id)
+    assert persisted is not None
+    assert persisted.id == final.analysis_id
+
+
+def test_baseline_failure_stops_before_comparison_and_marks_failed():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([RunOutcome(success=False, error_code="timeout", error_detail="Run exceeded 5m.")])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "timeout"
+    assert final.analysis_id is None
+    assert len(runner.calls) == 1  # comparison never attempted
+
+
+def test_comparison_failure_marks_failed_after_baseline_succeeded():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=False, error_code="process_failed", error_detail="Newman exited 1."),
+    ])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "process_failed"
+
+
+def test_cancel_requested_before_run_stops_immediately():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    job.cancel_requested = True
+    store.update(job)
+    runner = FakeNewmanRunner([])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.CANCELLED
+    assert final.stage_history[-1] == "cancelled"
+    assert runner.calls == []
+
+
+# --- A5.1: start guard ---
+
+
+def test_missing_job_is_a_noop():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    runner = FakeNewmanRunner([])
+    run_job(
+        "does-not-exist", collection_data={"info": {"name": "Demo"}, "item": []}, environment_data=None,
+        variable_values={}, folder_id=None, runner=runner, store=store,
+        analysis_store=InMemorySessionStore(ttl_seconds=60), settings=Settings(),
+    )
+    assert store.get("does-not-exist") is None
+    assert runner.calls == []
+
+
+def test_non_queued_active_job_is_a_noop():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    job.state = ExecutionJobState.RUNNING_BASELINE
+    store.update(job)
+    runner = FakeNewmanRunner([])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.RUNNING_BASELINE
+    assert runner.calls == []
+
+
+def test_already_terminal_job_is_a_noop():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    job.state = ExecutionJobState.READY
+    job.analysis_id = "an_existing"
+    store.update(job)
+    runner = FakeNewmanRunner([])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.READY
+    assert final.analysis_id == "an_existing"
+    assert runner.calls == []
+
+
+# --- A5.2: every state write re-reads; never resurrect/overwrite ---
+
+
+class _CancellingRunner:
+    """Simulates a cancellation request arriving while the baseline run executes."""
+
+    def __init__(self, store, job_id, outcome):
+        self.store = store
+        self.job_id = job_id
+        self.outcome = outcome
+        self.calls: list[RunInput] = []
+
+    def run(self, run_input: RunInput) -> RunOutcome:
+        self.calls.append(run_input)
+        job = self.store.get(self.job_id)
+        job.cancel_requested = True
+        self.store.update(job)
+        return self.outcome
+
+
+def test_cancel_requested_during_baseline_run_stops_before_comparison():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = _CancellingRunner(store, job.id, RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")))
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.CANCELLED
+    assert final.analysis_id is None
+    assert len(runner.calls) == 1  # comparison never run
+
+
+class _DeletingRunner:
+    """Simulates the job being deleted (e.g. via DELETE /jobs/{id}) mid-run."""
+
+    def __init__(self, store, job_id, outcome):
+        self.store = store
+        self.job_id = job_id
+        self.outcome = outcome
+        self.calls: list[RunInput] = []
+
+    def run(self, run_input: RunInput) -> RunOutcome:
+        self.calls.append(run_input)
+        self.store.delete(self.job_id)
+        return self.outcome
+
+
+def test_job_deleted_during_baseline_run_leaves_it_deleted():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = _DeletingRunner(store, job.id, RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")))
+    _run(job, runner, store)
+    assert store.get(job.id) is None
+    assert len(runner.calls) == 1  # never resurrected, comparison never run
+
+
+class _TerminalWritingRunner:
+    """Simulates some other path terminating the job (not via cancel_requested)
+    while the baseline run executes.
+    """
+
+    def __init__(self, store, job_id, outcome):
+        self.store = store
+        self.job_id = job_id
+        self.outcome = outcome
+        self.calls: list[RunInput] = []
+
+    def run(self, run_input: RunInput) -> RunOutcome:
+        self.calls.append(run_input)
+        job = self.store.get(self.job_id)
+        job.state = ExecutionJobState.FAILED
+        job.error_code = "external_failure"
+        self.store.update(job)
+        return self.outcome
+
+
+def test_already_terminal_job_found_on_rewrite_is_never_overwritten():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = _TerminalWritingRunner(store, job.id, RunOutcome(success=True, report_bytes=_newman_report("tok")))
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "external_failure"  # not clobbered by run_job's own writes
+    assert len(runner.calls) == 1  # comparison never run
+
+
+# --- A5.3: VALIDATING does real destination validation ---
+
+
+def test_blocked_destination_fails_closed_without_calling_the_runner():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://127.0.0.1/x")])
+    runner = FakeNewmanRunner([])
+    _run(job, runner, store, collection_data=collection)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "destination_validation_failed"
+    assert final.error_detail == "One or more request targets failed destination validation."
+    assert final.warnings  # the domain report's warnings were recorded
+    assert runner.calls == []
+
+
+def test_public_ip_literal_destination_proceeds_without_dns():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://93.184.216.34/x")])
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    _run(job, runner, store, collection_data=collection)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.READY
+    assert len(runner.calls) == 2
+
+
+# --- A5.4: failure mapping ---
+
+
+class _RaisingRunner:
+    def __init__(self) -> None:
+        self.calls: list[RunInput] = []
+
+    def run(self, run_input: RunInput) -> RunOutcome:
+        self.calls.append(run_input)
+        raise RuntimeError("secret_token=abc123 leaked here")
+
+
+def test_runner_exception_marks_failed_with_a_generic_detail():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = _RaisingRunner()
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "runner_error"
+    assert final.error_detail == "The Newman runner failed unexpectedly."
+    assert "secret_token" not in (final.error_detail or "")
+
+
+def test_run_failure_without_an_error_code_maps_to_run_failed():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([RunOutcome(success=False, error_code=None, error_detail="unspecified")])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "run_failed"
+
+
+def test_missing_report_bytes_marks_failed():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([RunOutcome(success=True, report_bytes=None)])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "missing_report"
+
+
+def test_empty_report_bytes_marks_failed():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([RunOutcome(success=True, report_bytes=b"")])
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "missing_report"
+
+
+def test_oversized_report_bytes_marks_failed():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([RunOutcome(success=True, report_bytes=b"x" * 100)])
+    _run(job, runner, store, settings=Settings(max_report_bytes=10))
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "report_too_large"
+
+
+def test_analysis_problem_exception_maps_its_code_and_detail(monkeypatch):
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+
+    def _boom(files, settings):
+        raise validation_error("Bad newman report shape.")
+
+    monkeypatch.setattr(analysis_service, "build_analysis", _boom)
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "validation_error"
+    assert final.error_detail == "Bad newman report shape."
+
+
+def test_analysis_unexpected_exception_marks_failed_with_a_generic_detail(monkeypatch):
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+
+    def _boom(files, settings):
+        raise RuntimeError("db password hunter2 in traceback")
+
+    monkeypatch.setattr(analysis_service, "build_analysis", _boom)
+    _run(job, runner, store)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.error_code == "analysis_error"
+    assert final.error_detail == "Analysis failed unexpectedly."
+    assert "hunter2" not in (final.error_detail or "")
+
+
+def test_analysis_persisted_before_ready_state_is_written(monkeypatch):
+    """analysis_store.create must happen before the job flips to READY, so a
+    reader who observes READY can always find the analysis (Task 7 / A5.5).
+    """
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    analysis_store = InMemorySessionStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    observed_states_at_create = []
+    original_create = analysis_store.create
+
+    def _spy_create(analysis):
+        observed_states_at_create.append(store.get(job.id).state)
+        original_create(analysis)
+
+    monkeypatch.setattr(analysis_store, "create", _spy_create)
+    _run(job, runner, store, analysis_store=analysis_store)
+    assert observed_states_at_create == [ExecutionJobState.ANALYZING]
+    assert store.get(job.id).state == ExecutionJobState.READY
+
+
+def test_resolver_is_passed_through_to_destination_validation():
+    """A collection with a variable host resolves via the injected resolver
+    instead of making real DNS calls.
+    """
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://internal.example.test/x")])
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+
+    def fake_resolver(hostname: str) -> list[str]:
+        assert hostname == "internal.example.test"
+        return ["93.184.216.34"]
+
+    _run(job, runner, store, collection_data=collection, resolver=fake_resolver)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.READY
