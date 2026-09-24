@@ -2,6 +2,7 @@
 import json
 
 from app.core.config import Settings
+from app.domain.enums import VariableSource
 from app.services.postman_inspector import inspect_collection
 from tests.fixtures.postman_builders import pm_collection, pm_environment, pm_folder, pm_request
 
@@ -54,6 +55,20 @@ def test_inspect_surfaces_unsupported_features():
         environment_raw=None, environment_filename=None, settings=Settings(),
     )
     assert len(inspection.unsupported_features) == 1
+
+
+def test_inspect_resolves_collection_level_variable():
+    request = pm_request("List", "GET", "https://api.example.com/{{apiVersion}}/items")
+    raw = json.dumps(pm_collection(
+        "Versioned API", [request], variables=[{"key": "apiVersion", "value": "v2"}],
+    )).encode()
+    inspection = inspect_collection(
+        collection_raw=raw, collection_filename="c.json",
+        environment_raw=None, environment_filename=None, settings=Settings(),
+    )
+    api_version = next(v for v in inspection.variables if v.name == "apiVersion")
+    assert api_version.source == VariableSource.COLLECTION
+    assert "apiVersion" not in inspection.unresolved_variable_names
 
 
 def test_inspect_never_includes_a_variable_value():
