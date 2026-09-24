@@ -9,7 +9,9 @@ from fastapi import Depends, Request
 from ..core.config import Settings, get_settings
 from ..core.errors import not_found, rate_limited
 from ..core.security import RateLimiter
+from ..domain.execution_job import ExecutionJob
 from ..repositories.analysis_store import Analysis, InMemorySessionStore, SessionStore
+from ..repositories.execution_job_store import ExecutionJobStore, InMemoryExecutionJobStore
 
 
 @lru_cache
@@ -38,3 +40,22 @@ def require_analysis(analysis_id: str, store: SessionStore = Depends(get_store))
     if analysis is None:
         raise not_found("Analysis not found or expired.")
     return analysis
+
+
+@lru_cache
+def get_job_store() -> ExecutionJobStore:
+    settings = get_settings()
+    return InMemoryExecutionJobStore(ttl_seconds=settings.job_ttl_seconds)
+
+
+def get_owner_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def require_owned_job(
+    job_id: str, request: Request, store: ExecutionJobStore = Depends(get_job_store),
+) -> ExecutionJob:
+    job = store.get(job_id)
+    if job is None or job.owner_key != get_owner_key(request):
+        raise not_found("Execution job not found or expired.")
+    return job
