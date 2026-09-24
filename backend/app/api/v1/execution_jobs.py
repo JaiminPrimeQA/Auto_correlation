@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from ...core.config import Settings, get_settings
 from ...core.errors import validation_error
 from ...core.logging import get_logger
-from ...domain.execution_job import ExecutionJob, RunOutcome
+from ...domain.execution_job import ExecutionJob, ExecutionJobState, RunOutcome
 from ...repositories.analysis_store import SessionStore
 from ...repositories.execution_job_store import ExecutionJobStore
 from ...schemas import presenters
@@ -195,3 +195,30 @@ async def create_execution_job(
 @router.get("/{job_id}")
 async def get_execution_job(job: ExecutionJob = Depends(require_owned_job)) -> dict:
     return presenters.execution_job_dto(job)
+
+
+@router.delete("/{job_id}", status_code=204)
+async def delete_execution_job(
+    job: ExecutionJob = Depends(require_owned_job),
+    job_store: ExecutionJobStore = Depends(get_job_store),
+) -> None:
+    cancelled = False
+
+    def _cancel_if_active(fresh: ExecutionJob) -> None:
+        nonlocal cancelled
+        if fresh.is_active:
+            fresh.cancel_requested = True
+            fresh.state = ExecutionJobState.CANCELLED
+            fresh.stage_history.append(ExecutionJobState.CANCELLED.value)
+            cancelled = True
+
+    # Atomic check-and-write under the store's lock (A8): a plain
+    # read-modify-`update` here could race with a concurrent `run_job`
+    # write (lost update) or a concurrent delete (resurrecting a deleted
+    # job). `mutate` returns None if the job is already gone/expired, in
+    # which case there is nothing left to cancel or delete.
+    result = job_store.mutate(job.id, _cancel_if_active)
+    if result is not None and not cancelled:
+        # The job was already terminal (or became terminal before the
+        # mutate ran) - nothing to cancel, so remove it outright.
+        job_store.delete(job.id)
