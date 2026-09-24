@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..domain.execution_job import ExecutionJob
 from ..domain.models import (
     AlignmentReport,
     CorrelationCandidate,
@@ -210,4 +211,16 @@ def postman_inspection_dto(inspection: CollectionInspection) -> dict:
         "domain_warnings": inspection.domain_warnings,
         "unsupported_features": [postman_unsupported_feature_dto(u) for u in inspection.unsupported_features],
         "warnings": inspection.warnings,
+    }
+
+
+def execution_job_dto(job: ExecutionJob) -> dict:
+    return {
+        "job_id": job.id,
+        "state": job.state.value,
+        "stage_history": job.stage_history,
+        "warnings": job.warnings,
+        "error_code": job.error_code,
+        "error_detail": job.error_detail,
+        "analysis_id": job.analysis_id,
     }
