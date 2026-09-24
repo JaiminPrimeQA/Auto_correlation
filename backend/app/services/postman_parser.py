@@ -86,7 +86,7 @@ def parse_environment(raw: bytes, *, filename: str, settings: Settings) -> Parse
 
     values: dict[str, str] = {}
     for entry in entries:
-        if not isinstance(entry, dict) or not entry.get("key"):
+        if not isinstance(entry, dict) or not isinstance(entry.get("key"), str) or not entry.get("key"):
             continue
         if entry.get("enabled", True) is False:
             continue

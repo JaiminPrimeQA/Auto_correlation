@@ -71,6 +71,23 @@ def test_flags_folder_level_auth_as_interactive():
     assert findings[0].location == "Secure Folder"
 
 
+def test_oauth2_with_null_params_does_not_crash():
+    # "oauth2": null is a valid-but-empty shape a hand-edited collection could
+    # have; auth.get("oauth2", []) only defaults for a MISSING key, not one
+    # explicitly set to None, so this used to raise TypeError: NoneType not iterable.
+    request = pm_request("Secure", "GET", "https://api.example.com/x", auth={"type": "oauth2", "oauth2": None})
+    findings = detect_unsupported_features(pm_collection("Demo", [request]))
+    assert findings == []
+
+
+def test_script_exec_with_null_entry_does_not_crash_and_still_detects_send_request():
+    request = pm_request("Chained", "GET", "https://api.example.com/x", events=[
+        {"listen": "prerequest", "script": {"exec": [None, "pm.sendRequest('https://x', function(e,r){});"]}},
+    ])
+    findings = detect_unsupported_features(pm_collection("Demo", [request]))
+    assert findings[0].kind == UnsupportedFeatureKind.DYNAMIC_REQUEST_CONSTRUCTION
+
+
 def test_flags_collection_root_pm_send_request():
     request = pm_request("Ping", "GET", "https://api.example.com/ping")
     collection = pm_collection("Demo", [request])

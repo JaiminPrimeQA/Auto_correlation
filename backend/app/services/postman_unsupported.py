@@ -22,7 +22,7 @@ def _auth_findings(auth: dict, location: str) -> list[UnsupportedFeature]:
             location=location,
         ))
     elif auth_type == "oauth2":
-        params = auth.get("oauth2", [])
+        params = auth.get("oauth2") or []
         grant = next((p.get("value") for p in params if isinstance(p, dict) and p.get("key") == "grantType"), None)
         if grant in _INTERACTIVE_OAUTH2_GRANTS:
             findings.append(UnsupportedFeature(
@@ -40,7 +40,10 @@ def _script_findings(item: dict, location: str) -> list[UnsupportedFeature]:
             continue
         script = event.get("script", {})
         exec_lines = script.get("exec", []) if isinstance(script, dict) else []
-        text = "\n".join(exec_lines) if isinstance(exec_lines, list) else str(exec_lines)
+        if isinstance(exec_lines, list):
+            text = "\n".join(x for x in exec_lines if isinstance(x, str))
+        else:
+            text = str(exec_lines)
         if "pm.sendRequest" in text:
             findings.append(UnsupportedFeature(
                 kind=UnsupportedFeatureKind.DYNAMIC_REQUEST_CONSTRUCTION,
@@ -64,7 +67,7 @@ def _walk(items: list, path: str) -> list[UnsupportedFeature]:
     for it in items:
         if not isinstance(it, dict):
             continue
-        name = it.get("name", "unnamed")
+        name = str(it.get("name", "unnamed"))
         here = f"{path} > {name}" if path else name
         if isinstance(it.get("item"), list):
             findings.extend(_script_findings(it, here))

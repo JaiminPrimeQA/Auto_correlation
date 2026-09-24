@@ -43,7 +43,7 @@ def inspect_collection(
 
     collection_variables: dict[str, str] = {
         key: str(v.get("value", ""))
-        for v in collection_data.get("variable", [])
+        for v in (collection_data.get("variable") or [])
         if isinstance(v, dict) and isinstance(key := v.get("key"), str) and key
     }
 
@@ -52,7 +52,11 @@ def inspect_collection(
     variables = resolve_variables(
         references, collection_variables=collection_variables, environment_values=environment_values,
     )
-    domain_report = extract_target_domains(collection_data, environment_values=environment_values, settings=settings)
+    domain_report = extract_target_domains(
+        collection_data,
+        environment_values={**collection_variables, **environment_values},
+        settings=settings,
+    )
 
     return CollectionInspection(
         collection_name=str(collection_data.get("info", {}).get("name") or "Untitled collection"),

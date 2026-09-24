@@ -72,3 +72,15 @@ def test_environment_oversize_rejected():
     with pytest.raises(ProblemException) as exc:
         parse_environment(b"x" * 100, filename="e.json", settings=Settings(max_environment_bytes=10))
     assert exc.value.status == 413
+
+
+def test_environment_entry_with_list_typed_key_is_skipped_not_crashed():
+    # A malformed environment could have a non-string (here: list) "key", which
+    # would otherwise raise TypeError: unhashable type: 'list' when used as a
+    # dict key. It must be skipped like any other invalid entry instead.
+    env = {"name": "dev", "values": [
+        {"key": ["not", "a", "string"], "value": "x", "enabled": True},
+        {"key": "host", "value": "api.example.com", "enabled": True},
+    ]}
+    parsed = parse_environment(_raw(env), filename="e.json", settings=Settings())
+    assert parsed.values == {"host": "api.example.com"}

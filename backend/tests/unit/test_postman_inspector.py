@@ -71,6 +71,37 @@ def test_inspect_resolves_collection_level_variable():
     assert "apiVersion" not in inspection.unresolved_variable_names
 
 
+def test_inspect_tolerates_explicit_null_collection_variable():
+    # A hand-edited or buggy-exporter collection could have "variable": null
+    # instead of a missing key or an empty array; this must not crash.
+    request = pm_request("Ping", "GET", "https://api.example.com/ping")
+    collection = pm_collection("Demo", [request])
+    collection["variable"] = None
+    raw = json.dumps(collection).encode()
+    inspection = inspect_collection(
+        collection_raw=raw, collection_filename="c.json",
+        environment_raw=None, environment_filename=None, settings=Settings(),
+    )
+    assert inspection.collection_name == "Demo"
+
+
+def test_target_domain_validation_uses_collection_variables_not_just_environment():
+    # A collection-level {{baseUrl}} variable is a standard Postman pattern.
+    # It must be honored when validating target domains, not just reported as
+    # an unresolved-variable warning while simultaneously appearing resolved
+    # in `variables` (Important #5).
+    request = pm_request("Ping", "GET", "https://{{baseUrl}}/ping")
+    raw = json.dumps(pm_collection(
+        "Demo", [request], variables=[{"key": "baseUrl", "value": "93.184.216.34"}],
+    )).encode()
+    inspection = inspect_collection(
+        collection_raw=raw, collection_filename="c.json",
+        environment_raw=None, environment_filename=None, settings=Settings(),
+    )
+    assert inspection.target_domains == ["93.184.216.34"]
+    assert inspection.domain_warnings == []
+
+
 def test_inspect_never_includes_a_variable_value():
     collection_raw = json.dumps(_collection_with_variables()).encode()
     env = pm_environment("dev", {"host": "93.184.216.34", "username": "alice", "password": "hunter2", "token": "abc"})

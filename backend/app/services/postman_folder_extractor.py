@@ -25,17 +25,28 @@ def count_requests(items: list) -> int:
     return total
 
 
-def _walk(items: list, path: str) -> list[PostmanFolder]:
+def _unique_slug(base: str, seen: set[str]) -> str:
+    slug = base
+    n = 2
+    while slug in seen:
+        slug = f"{base}-{n}"
+        n += 1
+    seen.add(slug)
+    return slug
+
+
+def _walk(items: list, path: str, seen: set[str]) -> list[PostmanFolder]:
     folders: list[PostmanFolder] = []
     for it in items:
         if not isinstance(it, dict) or not isinstance(it.get("item"), list):
             continue
-        name = it.get("name", "unnamed")
+        name = str(it.get("name", "unnamed"))
         here = f"{path} > {name}" if path else name
-        folders.append(PostmanFolder(id=_slugify(here), name=name, path=here, request_count=count_requests(it["item"])))
-        folders.extend(_walk(it["item"], here))
+        slug = _unique_slug(_slugify(here), seen)
+        folders.append(PostmanFolder(id=slug, name=name, path=here, request_count=count_requests(it["item"])))
+        folders.extend(_walk(it["item"], here, seen))
     return folders
 
 
 def extract_folders(collection_data: dict) -> list[PostmanFolder]:
-    return _walk(collection_data.get("item", []), "")
+    return _walk(collection_data.get("item", []), "", set())

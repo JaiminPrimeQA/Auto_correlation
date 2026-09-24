@@ -32,3 +32,24 @@ def test_count_requests_counts_all_nested_leaves():
         pm_folder("F", [pm_request("B", "GET", "https://x/b"), pm_folder("G", [pm_request("C", "GET", "https://x/c")])]),
     ]
     assert count_requests(items) == 3
+
+
+def test_numeric_folder_name_does_not_crash():
+    # A hand-edited or buggy-exporter collection could have a non-string
+    # folder name (e.g. an int); _slugify's .lower() call must not crash.
+    folder = pm_folder(42, [pm_request("Ping", "GET", "https://api.example.com/ping")])
+    folders = extract_folders(pm_collection("Demo", [folder]))
+    assert len(folders) == 1
+    assert folders[0].name == "42"
+    assert folders[0].id == "42"
+
+
+def test_slug_collision_is_disambiguated():
+    # "A B" and "A-B" both slugify to "a-b"; ids must remain unique since a
+    # later phase uses `id` to let testers select a folder to scope to.
+    folder_a = pm_folder("A B", [pm_request("Ping", "GET", "https://api.example.com/1")])
+    folder_b = pm_folder("A-B", [pm_request("Ping", "GET", "https://api.example.com/2")])
+    folders = extract_folders(pm_collection("Demo", [folder_a, folder_b]))
+    ids = [f.id for f in folders]
+    assert len(ids) == len(set(ids))
+    assert "a-b" in ids
