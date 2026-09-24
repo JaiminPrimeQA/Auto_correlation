@@ -63,6 +63,10 @@ def rate_limited(detail: str) -> ProblemException:
     return ProblemException(status=429, code="rate_limited", title="Too many requests", detail=detail)
 
 
+def service_unavailable(code: str, detail: str) -> ProblemException:
+    return ProblemException(status=503, code=code, title="Service unavailable", detail=detail)
+
+
 def conflict(detail: str) -> ProblemException:
     return ProblemException(status=409, code="conflict", title="Conflict", detail=detail)
 

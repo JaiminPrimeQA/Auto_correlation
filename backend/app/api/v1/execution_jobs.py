@@ -14,16 +14,22 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, Upl
 from starlette.concurrency import run_in_threadpool
 
 from ...core.config import Settings, get_settings
-from ...core.errors import validation_error
+from ...core.errors import service_unavailable, validation_error
 from ...core.logging import get_logger
-from ...domain.execution_job import ExecutionJob, ExecutionJobState, RunOutcome
+from ...domain.execution_job import ExecutionJob, ExecutionJobState, NewmanRunner
 from ...repositories.analysis_store import SessionStore
 from ...repositories.execution_job_store import ExecutionJobStore
 from ...schemas import presenters
 from ...services import execution_job_service
-from ...services.fake_newman_runner import FakeNewmanRunner
 from ...services.postman_inspector import inspect_collection
-from ..deps import enforce_rate_limit, get_job_store, get_owner_key, get_store, require_owned_job
+from ..deps import (
+    enforce_rate_limit,
+    get_job_store,
+    get_newman_runner,
+    get_owner_key,
+    get_store,
+    require_owned_job,
+)
 
 router = APIRouter(prefix="/execution-jobs", tags=["execution-jobs"])
 log = get_logger("execution_jobs")
@@ -59,53 +65,6 @@ async def inspect(
         },
     )
     return presenters.postman_inspection_dto(inspection)
-
-
-def _default_runner() -> FakeNewmanRunner:
-    """Phase 2 stand-in: two canned successful outcomes with no dynamic data.
-
-    Phase 3 replaces this with a settings-driven factory selecting a real
-    Docker/ECS NewmanRunner. Left deliberately simple here - this phase's job
-    is proving the state machine and API surface, not producing meaningful
-    correlation results by default.
-
-    The canned report is built in the same shape `tests/fixtures/builders.py`
-    produces (a `collection.info.name`, a `run.id`, and one execution with a
-    `cursor.position`, `item.name`, `request`, `response`, and `assertions`)
-    so it parses cleanly through the real `analysis_service.build_analysis`
-    rather than the plan's minimal shape, which omitted several of those
-    fields.
-    """
-    report_bytes = json.dumps(
-        {
-            "collection": {"info": {"name": "Execution"}},
-            "run": {
-                "id": "fake-run",
-                "executions": [
-                    {
-                        "cursor": {"position": 0},
-                        "item": {"name": "Ping"},
-                        "request": {"method": "GET", "url": "https://93.184.216.34/ping", "header": []},
-                        "response": {
-                            "id": "resp-ping",
-                            "status": "OK",
-                            "code": 200,
-                            "header": [],
-                            "responseTime": 1,
-                            "stream": {"type": "Buffer", "data": []},
-                        },
-                        "assertions": [],
-                    },
-                ],
-            },
-        }
-    ).encode()
-    return FakeNewmanRunner(
-        [
-            RunOutcome(success=True, report_bytes=report_bytes),
-            RunOutcome(success=True, report_bytes=report_bytes),
-        ]
-    )
 
 
 def _coerce_supplied_values(raw: dict) -> dict[str, str]:
@@ -145,8 +104,14 @@ async def create_execution_job(
     analysis_store: SessionStore = Depends(get_store),
     owner_key: str = Depends(get_owner_key),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    runner: NewmanRunner | None = Depends(get_newman_runner),
     _: None = Depends(enforce_rate_limit),
 ) -> dict:
+    # Spec §4: with no runner configured (the default) nothing may execute, so
+    # refuse before any job state exists rather than queue a job that can
+    # never run.
+    if runner is None:
+        raise service_unavailable("runner_unavailable", "Collection execution is not enabled on this server.")
     if not confirm:
         raise validation_error("Execution requires explicit confirmation (confirm=true).")
     try:
@@ -197,7 +162,7 @@ async def create_execution_job(
             environment_data=environment_data,
             variable_values=variable_values,
             folder_id=folder_id,
-            runner=_default_runner(),
+            runner=runner,
             store=job_store,
             analysis_store=analysis_store,
             settings=settings,

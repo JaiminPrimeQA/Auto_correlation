@@ -8,6 +8,7 @@ code changes. Defaults are conservative and match the product specification.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -65,6 +66,11 @@ class Settings(BaseSettings):
     # A repeat POST with the same Idempotency-Key header, from the same owner,
     # within this window returns the existing job instead of starting a new one.
     idempotency_window_seconds: int = 10 * 60
+    # Which NewmanRunner executes jobs. `disabled` (the default, spec §4) makes
+    # POST /execution-jobs answer 503 `runner_unavailable` without creating a
+    # job; `fake` selects the deterministic canned FakeNewmanRunner (dev/tests
+    # only - it never contacts the collection's targets).
+    newman_runner: Literal["disabled", "fake"] = "disabled"
 
     # --- Session store ---
     session_ttl_seconds: int = 30 * 60

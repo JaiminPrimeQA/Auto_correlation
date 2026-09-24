@@ -19,15 +19,26 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_job_store
+from app.api.deps import get_job_store, get_newman_runner
 from app.api.v1.execution_jobs import _coerce_supplied_values
 from app.domain.execution_job import ExecutionJob, ExecutionJobState
 from app.main import create_app
+from app.services.fake_newman_runner import canned_fake_runner
 from tests.fixtures.postman_builders import pm_collection, pm_request
 
 
 @pytest.fixture
 def client():
+    # The runner is disabled by default (spec §4); the lifecycle tests opt in
+    # to the deterministic canned fake explicitly, per request.
+    app = create_app()
+    app.dependency_overrides[get_newman_runner] = canned_fake_runner
+    return TestClient(app)
+
+
+@pytest.fixture
+def default_client():
+    """A client with NO runner override - i.e. the shipped default setting."""
     return TestClient(create_app())
 
 
@@ -63,6 +74,20 @@ def test_create_job_returns_202_and_reaches_ready(client):
 
     analysis_resp = client.get(f"/api/v1/analyses/{status['analysis_id']}")
     assert analysis_resp.status_code == 200
+
+
+def test_create_job_with_default_runner_setting_is_503_and_creates_no_job(default_client):
+    resp = default_client.post(
+        "/api/v1/execution-jobs",
+        data={"confirm": "true", "supplied_values_json": "{}"},
+        files={"collection": ("c.json", json.dumps(_collection()).encode(), "application/json")},
+        headers={"Idempotency-Key": "runner-disabled-probe"},
+    )
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["code"] == "runner_unavailable"
+    assert resp.headers["content-type"].startswith("application/problem+json")
+    assert get_job_store().find_by_idempotency_key("testclient", "runner-disabled-probe", window_seconds=600) is None
 
 
 def test_create_job_rejects_without_confirmation(client):
