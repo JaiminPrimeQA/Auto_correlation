@@ -62,6 +62,11 @@ def _from_body(body: object, location: str) -> list[VariableReference]:
         for param in body.get(mode, []) or []:
             if isinstance(param, dict) and param.get("type") != "file":
                 refs += [VariableReference(n, f"{location} > body") for n in _names_in(str(param.get("value", "")))]
+    elif mode == "graphql":
+        gql = body.get("graphql", {})
+        if isinstance(gql, dict):
+            refs += [VariableReference(n, f"{location} > body") for n in _names_in(gql.get("query", ""))]
+            refs += [VariableReference(n, f"{location} > body") for n in _names_in(gql.get("variables", ""))]
     return refs
 
 
@@ -70,7 +75,14 @@ def _from_auth(auth: object, location: str) -> list[VariableReference]:
         return []
     refs: list[VariableReference] = []
     for key, params in auth.items():
-        if key == "type" or not isinstance(params, list):
+        if key == "type":
+            continue
+        if isinstance(params, dict):
+            # Postman v2.0 object-form auth, e.g. {"bearer": {"token": "{{tok}}"}}.
+            for v in params.values():
+                refs += [VariableReference(n, f"{location} > auth") for n in _names_in(str(v))]
+            continue
+        if not isinstance(params, list):
             continue
         for p in params:
             if isinstance(p, dict):
@@ -83,8 +95,12 @@ def _walk(items: list, path: str) -> list[VariableReference]:
     for it in items:
         if not isinstance(it, dict):
             continue
-        here = f"{path} > {it.get('name', 'unnamed')}" if path else it.get("name", "unnamed")
+        name = str(it.get("name", "unnamed"))
+        here = f"{path} > {name}" if path else name
         if isinstance(it.get("item"), list):
+            folder_auth = it.get("auth")
+            if folder_auth is not None:
+                refs.extend(_from_auth(folder_auth, here))
             refs.extend(_walk(it["item"], here))
             continue
         request = it.get("request")
@@ -98,4 +114,6 @@ def _walk(items: list, path: str) -> list[VariableReference]:
 
 
 def extract_variable_references(collection_data: dict) -> list[VariableReference]:
-    return _walk(collection_data.get("item", []), "")
+    refs = _from_auth(collection_data.get("auth"), "collection")
+    refs.extend(_walk(collection_data.get("item", []), ""))
+    return refs

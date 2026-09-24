@@ -54,6 +54,47 @@ def test_no_variables_returns_empty_list():
     assert extract_variable_references(collection) == []
 
 
+def test_folder_level_auth_is_scanned_even_without_per_request_auth():
+    request = pm_request("Ping", "GET", "https://api.example.com/ping")
+    folder = pm_folder("Secure Folder", [request])
+    folder["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{folderToken}}"}]}
+    collection = pm_collection("Demo", [folder])
+    refs = extract_variable_references(collection)
+    match = next(r for r in refs if r.name == "folderToken")
+    assert "Secure Folder" in match.location
+
+
+def test_collection_root_auth_is_scanned():
+    request = pm_request("Ping", "GET", "https://api.example.com/ping")
+    collection = pm_collection("Demo", [request])
+    collection["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{token}}"}]}
+    refs = extract_variable_references(collection)
+    match = next(r for r in refs if r.name == "token")
+    assert "collection" in match.location
+
+
+def test_v2_object_form_auth_is_scanned():
+    # Postman v2.0 exports sometimes use a dict for the auth-type params
+    # instead of v2.1's list-of-{key,value} form.
+    request = pm_request(
+        "Ping", "GET", "https://api.example.com/ping",
+        auth={"type": "bearer", "bearer": {"token": "{{tok}}"}},
+    )
+    collection = pm_collection("Demo", [request])
+    names = {r.name for r in extract_variable_references(collection)}
+    assert "tok" in names
+
+
+def test_graphql_body_is_scanned():
+    request = pm_request("Query", "POST", "https://api.example.com/graphql", body={
+        "mode": "graphql",
+        "graphql": {"query": "query { thing(id: \"{{gqlVar}}\") }", "variables": ""},
+    })
+    collection = pm_collection("Demo", [request])
+    names = {r.name for r in extract_variable_references(collection)}
+    assert names == {"gqlVar"}
+
+
 def test_from_headers_ignores_malformed_non_list_header_field():
     # A malformed collection could have a non-list `header` field (e.g. hand-edited
     # or produced by a buggy exporter). Extraction must degrade gracefully to "no
