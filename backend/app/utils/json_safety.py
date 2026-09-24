@@ -14,7 +14,13 @@ from ..core.errors import validation_error
 
 
 def decode_json(raw: bytes) -> object:
-    text = raw.decode("utf-8-sig")  # tolerate UTF-8 BOM
+    try:
+        text = raw.decode("utf-8-sig")  # tolerate UTF-8 BOM
+    except UnicodeDecodeError as exc:
+        raise validation_error(
+            "File is not valid UTF-8 text.",
+            errors=[{"path": "$", "detail": str(exc)}],
+        ) from exc
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:  # precise location
