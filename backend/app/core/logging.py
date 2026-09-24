@@ -33,7 +33,7 @@ class RedactingJsonFormatter(logging.Formatter):
             "request_id": get_request_id(),
             "msg": redact_for_log(record.getMessage()),
         }
-        for key in ("stage", "count", "duration_ms", "error_code", "analysis_id"):
+        for key in ("stage", "count", "duration_ms", "error_code", "analysis_id", "job_id", "exc_type"):
             val = getattr(record, key, None)
             if val is not None:
                 payload[key] = val

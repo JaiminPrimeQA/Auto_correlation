@@ -67,6 +67,17 @@ async def inspect(
     return presenters.postman_inspection_dto(inspection)
 
 
+def _reject_non_finite(literal: str) -> float:
+    """`json.loads` hook for the non-standard NaN/Infinity/-Infinity literals
+    Python otherwise accepts: they are not valid JSON and would canonicalize
+    to "NaN"/"Infinity", so reject them outright.
+    """
+    raise validation_error(
+        f"'supplied_values_json' must not contain {literal}.",
+        errors=[{"path": "$.supplied_values", "detail": "NaN and Infinity are not allowed."}],
+    )
+
+
 def _coerce_supplied_values(raw: dict) -> dict[str, str]:
     """Canonicalize JSON-decoded `supplied_values_json` entries to strings.
 
@@ -115,7 +126,7 @@ async def create_execution_job(
     if not confirm:
         raise validation_error("Execution requires explicit confirmation (confirm=true).")
     try:
-        supplied_values = json.loads(supplied_values_json)
+        supplied_values = json.loads(supplied_values_json, parse_constant=_reject_non_finite)
     except json.JSONDecodeError as exc:
         raise validation_error("'supplied_values_json' is not valid JSON.") from exc
     if not isinstance(supplied_values, dict):

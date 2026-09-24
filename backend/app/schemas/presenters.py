@@ -218,8 +218,9 @@ def execution_job_dto(job: ExecutionJob) -> dict:
     return {
         "job_id": job.id,
         "state": job.state.value,
-        "stage_history": job.stage_history,
-        "warnings": job.warnings,
+        # Copies: the DTO must not alias the stored job's mutable lists.
+        "stage_history": list(job.stage_history),
+        "warnings": list(job.warnings),
         "error_code": job.error_code,
         "error_detail": job.error_detail,
         "analysis_id": job.analysis_id,

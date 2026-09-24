@@ -1,13 +1,15 @@
 import json
+import logging
 import time
 
 from app.core.config import Settings
 from app.core.errors import validation_error
+from app.core.logging import RedactingJsonFormatter
 from app.domain.execution_job import ExecutionJob, ExecutionJobState, RunInput, RunOutcome
 from app.repositories.analysis_store import InMemorySessionStore
 from app.repositories.execution_job_store import InMemoryExecutionJobStore
 from app.services import analysis_service
-from app.services.execution_job_service import run_job
+from app.services.execution_job_service import _redact_variable_values, run_job
 from app.services.fake_newman_runner import FakeNewmanRunner
 from tests.fixtures import builders as b
 from tests.fixtures.postman_builders import pm_collection, pm_request
@@ -739,3 +741,94 @@ def test_job_already_claimed_by_a_live_worker_is_not_run_twice():
     final = store.get(job.id)
     assert final.state == ExecutionJobState.QUEUED
     assert final.worker_active is True  # the other worker's claim is left untouched
+
+
+# --- F5: case-insensitive redaction; swallowed exceptions logged without messages ---
+
+
+def test_redaction_is_case_insensitive():
+    """A mixed-case supplied host is normalized (lower-cased) by URL parsing, so
+    the warning echoes it in a different case - it must still be redacted.
+    """
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://{{host}}/x")])
+    _run(job, FakeNewmanRunner([]), store, collection_data=collection, variable_values={"host": "LocalHost"})
+    final = store.get(job.id)
+    assert final.error_code == "destination_validation_failed"
+    assert final.warnings
+    assert not any("localhost" in w.lower() for w in final.warnings)
+    assert any("{{host}}" in w for w in final.warnings)
+
+
+def test_redact_variable_values_replaces_every_case_variant():
+    text = "Blocked SECRET-host.example and secret-HOST.example"
+    assert _redact_variable_values(text, {"h": "secret-host.example"}) == "Blocked {{h}} and {{h}}"
+
+
+_SERVICE_LOGGER = "execution_job_service"
+
+
+def _swallow_records(caplog) -> list:
+    return [r for r in caplog.records if r.name == _SERVICE_LOGGER and getattr(r, "exc_type", None)]
+
+
+def _assert_no_leak(records, *secrets: str) -> None:
+    for r in records:
+        assert r.exc_info is None  # a traceback would carry the message
+        rendered = r.getMessage() + " " + " ".join(str(v) for v in vars(r).values())
+        for secret in secrets:
+            assert secret not in rendered
+
+
+def test_runner_exception_is_logged_with_type_only(caplog):
+    caplog.set_level(logging.WARNING, logger=_SERVICE_LOGGER)
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    _run(job, _RaisingRunner(), store)
+    records = _swallow_records(caplog)
+    assert [(r.job_id, r.stage, r.exc_type) for r in records] == [(job.id, "running_baseline", "RuntimeError")]
+    _assert_no_leak(records, "secret_token", "abc123")
+
+
+def test_unexpected_drive_exception_is_logged_with_type_only(caplog):
+    caplog.set_level(logging.WARNING, logger=_SERVICE_LOGGER)
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://internal.example.test/x")])
+
+    def raising_resolver(hostname: str) -> list[str]:
+        raise OSError("dns server unreachable at 10.0.0.5")
+
+    _run(job, FakeNewmanRunner([]), store, collection_data=collection, resolver=raising_resolver)
+    records = _swallow_records(caplog)
+    assert [(r.job_id, r.stage, r.exc_type) for r in records] == [(job.id, "validating", "OSError")]
+    _assert_no_leak(records, "dns server", "10.0.0.5")
+
+
+def test_unexpected_analysis_exception_is_logged_with_type_only(caplog, monkeypatch):
+    caplog.set_level(logging.WARNING, logger=_SERVICE_LOGGER)
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+
+    def _boom(files, settings):
+        raise RuntimeError("db password hunter2 in traceback")
+
+    monkeypatch.setattr(analysis_service, "build_analysis", _boom)
+    _run(job, runner, store)
+    records = _swallow_records(caplog)
+    assert [(r.job_id, r.stage, r.exc_type) for r in records] == [(job.id, "analyzing", "RuntimeError")]
+    _assert_no_leak(records, "hunter2")
+
+
+def test_log_formatter_emits_job_id_and_exc_type():
+    record = logging.LogRecord(_SERVICE_LOGGER, logging.WARNING, __file__, 1, "swallowed", None, None)
+    record.job_id = "job_1"
+    record.stage = "analyzing"
+    record.exc_type = "RuntimeError"
+    payload = json.loads(RedactingJsonFormatter().format(record))
+    assert (payload["job_id"], payload["stage"], payload["exc_type"]) == ("job_1", "analyzing", "RuntimeError")

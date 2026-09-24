@@ -10,11 +10,13 @@ actual state-machine driving via an injected NewmanRunner.
 from __future__ import annotations
 
 import copy
+import re
 import time
 from collections.abc import Callable
 
 from ..core.config import Settings
 from ..core.errors import ProblemException, validation_error
+from ..core.logging import get_logger
 from ..core.security import new_analysis_id
 from ..domain.execution_job import ExecutionJob, ExecutionJobState, NewmanRunner, RunInput, RunOutcome
 from ..repositories.analysis_store import SessionStore
@@ -24,6 +26,19 @@ from .postman_folder_extractor import extract_folders
 from .postman_parser import parse_collection, parse_environment
 from .postman_variable_extractor import extract_variable_references
 from .postman_variable_resolver import collection_variable_values, resolve_variables, unresolved_names
+
+log = get_logger("execution_job_service")
+
+
+def _log_swallowed(job_id: str, stage: str, exc: BaseException) -> None:
+    """Record a swallowed exception server-side: job id, stage, and exception
+    TYPE only. Never the message or a traceback (`exc_info`) - either can carry
+    secrets or variable values.
+    """
+    log.warning(
+        "execution job exception swallowed",
+        extra={"job_id": job_id, "stage": stage, "exc_type": type(exc).__name__},
+    )
 
 
 def create_job(
@@ -210,14 +225,15 @@ def _cancellation_probe(job_id: str, store: ExecutionJobStore) -> Callable[[], b
 
 
 def _run_safely(
-    runner: NewmanRunner, run_input: RunInput, should_cancel: Callable[[], bool],
+    runner: NewmanRunner, run_input: RunInput, should_cancel: Callable[[], bool], *, job_id: str, stage: str,
 ) -> RunOutcome | None:
     """Run the Newman runner, turning any exception into `None` so the caller
     never lets exception text (which may contain secrets) reach job fields.
     """
     try:
         return runner.run(run_input, should_cancel=should_cancel)
-    except Exception:
+    except Exception as exc:
+        _log_swallowed(job_id, stage, exc)
         return None
 
 
@@ -252,7 +268,9 @@ def _run_stage(
     """
     if not _write_state(job_id, store, stage):
         return None
-    outcome = _run_safely(runner, make_run_input(), _cancellation_probe(job_id, store))
+    outcome = _run_safely(
+        runner, make_run_input(), _cancellation_probe(job_id, store), job_id=job_id, stage=stage.value,
+    )
     if outcome is None:
         _write_state(
             job_id, store, ExecutionJobState.FAILED,
@@ -265,6 +283,13 @@ def _run_stage(
         _write_state(job_id, store, ExecutionJobState.FAILED, error_code=code, error_detail=detail)
         return None
     return outcome
+
+
+def _literal(replacement: str) -> Callable[[re.Match[str]], str]:
+    def _replace(_match: re.Match[str]) -> str:
+        return replacement
+
+    return _replace
 
 
 def _redact_variable_values(text: str, variable_values: dict[str, str]) -> str:
@@ -284,7 +309,11 @@ def _redact_variable_values(text: str, variable_values: dict[str, str]) -> str:
         reverse=True,
     )
     for name, value in redactable:
-        text = text.replace(value, f"{{{{{name}}}}}")
+        # Case-insensitive: URL parsing lower-cases hostnames, so a warning can
+        # echo a supplied value in a different case than it was supplied in.
+        # A plain-string replacement would interpret backslashes; `_literal`
+        # keeps the placeholder verbatim.
+        text = re.compile(re.escape(value), re.IGNORECASE).sub(_literal(f"{{{{{name}}}}}"), text)
     return text
 
 
@@ -339,7 +368,10 @@ def run_job(
             runner=runner, store=store,
             analysis_store=analysis_store, settings=settings, resolver=resolver,
         )
-    except Exception:
+    except Exception as exc:
+        # The stage is whatever state the job had reached when it raised.
+        current = store.get(job_id)
+        _log_swallowed(job_id, current.state.value if current is not None else "unknown", exc)
         _write_state(
             job_id, store, ExecutionJobState.FAILED,
             error_code="unexpected_error", error_detail="The execution job failed unexpectedly.",
@@ -417,7 +449,8 @@ def _drive_job(
     except ProblemException as exc:
         _write_state(job_id, store, ExecutionJobState.FAILED, error_code=exc.code, error_detail=exc.detail)
         return
-    except Exception:
+    except Exception as exc:
+        _log_swallowed(job_id, ExecutionJobState.ANALYZING.value, exc)
         _write_state(
             job_id, store, ExecutionJobState.FAILED,
             error_code="analysis_error", error_detail="Analysis failed unexpectedly.",

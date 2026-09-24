@@ -23,6 +23,19 @@ def test_execution_job_dto_shape():
     }
 
 
+def test_execution_job_dto_returns_copies_not_the_jobs_own_lists():
+    job = ExecutionJob(id="j1", owner_key="127.0.0.1", collection_name="Demo",
+                        created_at=time.time(), expires_at=time.time() + 60,
+                        stage_history=["validating"], warnings=["w1"])
+    dto = execution_job_dto(job)
+    assert dto["stage_history"] is not job.stage_history
+    assert dto["warnings"] is not job.warnings
+    job.stage_history.append("running_baseline")
+    job.warnings.append("w2")
+    assert dto["stage_history"] == ["validating"]
+    assert dto["warnings"] == ["w1"]
+
+
 def test_execution_job_dto_never_includes_owner_key_or_collection_data():
     job = ExecutionJob(id="j1", owner_key="127.0.0.1", collection_name="Demo",
                         created_at=time.time(), expires_at=time.time() + 60)

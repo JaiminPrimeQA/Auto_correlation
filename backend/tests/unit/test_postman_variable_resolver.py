@@ -77,3 +77,26 @@ def test_collection_variable_values_extracts_key_value_pairs():
 
 def test_collection_variable_values_handles_missing_variable_list():
     assert collection_variable_values({}) == {}
+
+
+def test_collection_variable_values_canonicalizes_non_string_values_like_supplied_values():
+    data = {
+        "variable": [
+            {"key": "flag", "value": True},
+            {"key": "off", "value": False},
+            {"key": "count", "value": 1},
+            {"key": "ratio", "value": 1.5},
+            {"key": "nothing", "value": None},
+            {"key": "absent"},
+            {"key": "name", "value": "raw"},
+        ],
+    }
+    assert collection_variable_values(data) == {
+        "flag": "true",
+        "off": "false",
+        "count": "1",
+        "ratio": "1.5",
+        "nothing": "",
+        "absent": "",
+        "name": "raw",
+    }

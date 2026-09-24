@@ -281,6 +281,18 @@ def test_supplied_array_value_is_rejected(client):
     assert resp.status_code == 422
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+def test_supplied_nan_or_infinity_is_rejected(client, literal):
+    collection = pm_collection("Nanish", [pm_request("Ping", "GET", "https://93.184.216.34/ping?x={{x}}")])
+    resp = client.post(
+        "/api/v1/execution-jobs",
+        data={"confirm": "true", "supplied_values_json": '{"x": ' + literal + "}"},
+        files={"collection": ("c.json", json.dumps(collection).encode(), "application/json")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "validation_error"
+
+
 def test_existing_inspect_and_analyses_endpoints_still_work(client):
     inspect_resp = client.post(
         "/api/v1/execution-jobs/inspect",
