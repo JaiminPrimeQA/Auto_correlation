@@ -71,6 +71,12 @@ def bad_request(code: str, detail: str) -> ProblemException:
     return ProblemException(status=400, code=code, title="Bad request", detail=detail)
 
 
+def blocked_destination(detail: str) -> ProblemException:
+    return ProblemException(
+        status=422, code="blocked_destination", title="Destination not permitted", detail=detail,
+    )
+
+
 async def problem_exception_handler(_: Request, exc: ProblemException) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status,

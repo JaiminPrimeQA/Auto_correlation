@@ -10,9 +10,12 @@ fake in tests to avoid depending on real DNS.
 from __future__ import annotations
 
 import ipaddress
+import socket
+from collections.abc import Callable
 from urllib.parse import urlsplit
 
 from ..core.config import Settings
+from ..core.errors import blocked_destination, validation_error
 
 _BLOCKED_IP_REASONS = ("is_loopback", "is_link_local", "is_multicast", "is_unspecified", "is_private", "is_reserved")
 _REASON_NAMES = {
@@ -57,3 +60,43 @@ def extract_hostname(url: str) -> str | None:
         return urlsplit(url).hostname
     except ValueError:
         return None
+
+
+Resolver = Callable[[str], list[str]]
+
+
+def default_resolver(hostname: str) -> list[str]:
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except OSError as exc:
+        raise validation_error(f"Could not resolve host '{hostname}'.") from exc
+    return sorted({info[4][0] for info in infos})
+
+
+def validate_destination(url: str, *, settings: Settings, resolver: Resolver | None = None) -> None:
+    resolve = resolver or default_resolver
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https"):
+        raise blocked_destination(f"Unsupported protocol '{scheme or '(none)'}'; only HTTPS is permitted.")
+    if scheme == "http" and settings.https_only:
+        raise blocked_destination("Plain HTTP destinations are not permitted; use HTTPS.")
+
+    host = parts.hostname
+    if not host:
+        raise validation_error("URL has no hostname.")
+    if is_blocked_hostname(host, settings):
+        raise blocked_destination(f"Destination host '{host}' is blocked.")
+
+    if is_ip_literal(host):
+        reason = classify_ip(host)
+        if reason:
+            raise blocked_destination(f"Destination IP is {reason.replace('_', ' ')}; not permitted.")
+        return
+
+    for ip_str in resolve(host):
+        reason = classify_ip(ip_str) if is_ip_literal(ip_str) else None
+        if reason:
+            raise blocked_destination(
+                f"Destination host '{host}' resolves to a {reason.replace('_', ' ')} address; not permitted."
+            )
