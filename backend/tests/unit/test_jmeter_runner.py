@@ -6,6 +6,7 @@ plus a real end-to-end execution when JMeter is available.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -102,6 +103,25 @@ def test_disabled_jmeter_is_faithful():
     assert rep.status == "validation_failed"
     assert rep.executed is False
     assert any("not available" in r for r in rep.reasons)
+
+
+def test_timeout_with_truncated_multibyte_stdout_does_not_crash(tmp_path, monkeypatch):
+    # On POSIX, TimeoutExpired.stdout/.stderr can genuinely be raw bytes even
+    # with text=True (only Windows re-calls communicate() for text output on
+    # timeout). If the process was killed mid multi-byte UTF-8 character, a
+    # bare .decode() raises UnicodeDecodeError; errors="replace" must prevent
+    # that crash (Minor #1).
+    truncated = "café".encode()[:-1]  # truncated mid-character
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=1, output=truncated, stderr=truncated)
+
+    monkeypatch.setattr(jmeter_runner.subprocess, "run", fake_run)
+    settings = Settings(jmeter_timeout_seconds=1)
+    outcome = jmeter_runner._execute(["jmeter"], "<x/>", [], {}, tmp_path, settings)
+    assert outcome.timed_out is True
+    assert isinstance(outcome.stdout, str)
+    assert isinstance(outcome.stderr, str)
 
 
 # --------------------------------------------------------------------------- #
