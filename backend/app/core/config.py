@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     max_scalar_length: int = 200_000
     max_total_values: int = 2_000_000
 
+    # --- Postman collection intake limits (Phase 1: inspection only) ---
+    max_collection_bytes: int = 10 * MIB
+    max_environment_bytes: int = 2 * MIB
+
+    # --- Public-HTTPS destination policy ---
+    # Never true in production regardless of this flag; see `https_only`.
+    allow_insecure_http_destinations: bool = False
+    # Comma-separated hostnames that are always blocked in addition to the
+    # localhost/private/metadata-IP checks in `destination_policy`.
+    blocked_hostnames: str = "169.254.169.254,metadata.google.internal,metadata.goog,metadata.azure.com"
+
     # --- Session store ---
     session_ttl_seconds: int = 30 * 60
     session_store: str = "memory"  # memory | redis
@@ -86,6 +97,14 @@ class Settings(BaseSettings):
         if self.is_production and "*" in origins:
             raise ValueError("Wildcard CORS origin is not allowed in production.")
         return origins
+
+    @property
+    def blocked_hostname_list(self) -> list[str]:
+        return [h.strip().lower() for h in self.blocked_hostnames.split(",") if h.strip()]
+
+    @property
+    def https_only(self) -> bool:
+        return self.is_production or not self.allow_insecure_http_destinations
 
 
 @lru_cache
