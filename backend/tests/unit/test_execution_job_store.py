@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from app.core.errors import ProblemException
 from app.domain.execution_job import ExecutionJob, ExecutionJobState
 from app.repositories.execution_job_store import InMemoryExecutionJobStore
 
@@ -106,3 +107,52 @@ def test_mutate_expired_job_returns_none_and_evicts_it(store):
     result = store.mutate("j1", lambda j: None)
     assert result is None
     assert store.get("j1") is None
+
+
+# --- F1: most-recent tie-break + atomic create_if_allowed ---
+
+
+def test_find_by_idempotency_key_returns_the_most_recent_match(store):
+    now = time.time()
+    store.create(_job(id="older", owner="o", idempotency_key="k", created_at=now - 30))
+    store.create(_job(id="newest", owner="o", idempotency_key="k", created_at=now - 1))
+    store.create(_job(id="middle", owner="o", idempotency_key="k", created_at=now - 10))
+    assert store.find_by_idempotency_key("o", "k", window_seconds=600).id == "newest"
+
+
+def test_create_if_allowed_inserts_when_under_cap(store):
+    job = _job(id="a", owner="o")
+    result, created = store.create_if_allowed(job, window_seconds=600, max_active=2)
+    assert created is True
+    assert result is job
+    assert store.get("a") is job
+
+
+def test_create_if_allowed_returns_existing_on_idempotency_hit(store):
+    existing = _job(id="a", owner="o", idempotency_key="k")
+    store.create(existing)
+    result, created = store.create_if_allowed(
+        _job(id="b", owner="o", idempotency_key="k"), window_seconds=600, max_active=2,
+    )
+    assert created is False
+    assert result is existing
+    assert store.get("b") is None
+
+
+def test_create_if_allowed_idempotency_hit_wins_over_cap(store):
+    store.create(_job(id="a", owner="o", idempotency_key="k"))
+    store.create(_job(id="b", owner="o"))
+    result, created = store.create_if_allowed(
+        _job(id="c", owner="o", idempotency_key="k"), window_seconds=600, max_active=2,
+    )
+    assert (result.id, created) == ("a", False)
+
+
+def test_create_if_allowed_raises_429_at_cap_and_inserts_nothing(store):
+    store.create(_job(id="a", owner="o"))
+    store.create(_job(id="b", owner="o"))
+    with pytest.raises(ProblemException) as exc:
+        store.create_if_allowed(_job(id="c", owner="o"), window_seconds=600, max_active=2)
+    assert exc.value.status == 429
+    assert exc.value.code == "rate_limited"
+    assert store.get("c") is None

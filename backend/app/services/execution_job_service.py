@@ -12,11 +12,11 @@ from __future__ import annotations
 import time
 
 from ..core.config import Settings
-from ..core.errors import ProblemException, rate_limited, validation_error
+from ..core.errors import ProblemException, validation_error
 from ..core.security import new_analysis_id
 from ..domain.execution_job import ExecutionJob, ExecutionJobState, NewmanRunner, RunInput, RunOutcome
 from ..repositories.analysis_store import SessionStore
-from ..repositories.execution_job_store import ExecutionJobStore
+from ..repositories.execution_job_store import ExecutionJobStore, too_many_active_jobs
 from . import analysis_service, destination_policy, postman_domain_extractor
 from .postman_folder_extractor import extract_folders
 from .postman_parser import parse_collection, parse_environment
@@ -37,6 +37,10 @@ def create_job(
     store: ExecutionJobStore,
     settings: Settings,
 ) -> tuple[ExecutionJob, bool]:
+    # Fast path only: these two checks are NOT atomic with the insert below
+    # (parsing/resolution runs in between). They avoid the parse cost for an
+    # obvious repeat or over-cap submission; `store.create_if_allowed` repeats
+    # both checks atomically with the insert and is the authoritative gate.
     if idempotency_key:
         existing = store.find_by_idempotency_key(
             owner_key, idempotency_key, window_seconds=settings.idempotency_window_seconds,
@@ -45,9 +49,7 @@ def create_job(
             return existing, False
 
     if store.count_active(owner_key) >= settings.max_concurrent_jobs_per_owner:
-        raise rate_limited(
-            f"Too many active execution jobs ({settings.max_concurrent_jobs_per_owner} allowed at a time)."
-        )
+        raise too_many_active_jobs(settings.max_concurrent_jobs_per_owner)
 
     parsed_collection = parse_collection(collection_raw, filename=collection_filename, settings=settings)
     collection_data = parsed_collection.data
@@ -94,8 +96,11 @@ def create_job(
         state=ExecutionJobState.QUEUED,
         warnings=list(parsed_collection.warnings),
     )
-    store.create(job)
-    return job, True
+    return store.create_if_allowed(
+        job,
+        window_seconds=settings.idempotency_window_seconds,
+        max_active=settings.max_concurrent_jobs_per_owner,
+    )
 
 
 def prepare_run_material(
