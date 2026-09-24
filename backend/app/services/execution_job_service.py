@@ -98,6 +98,44 @@ def create_job(
     return job, True
 
 
+def prepare_run_material(
+    *,
+    collection_raw: bytes,
+    collection_filename: str,
+    environment_raw: bytes | None,
+    environment_filename: str | None,
+    supplied_values: dict[str, str],
+    settings: Settings,
+) -> tuple[dict, dict | None, dict[str, str]]:
+    """Parse the collection/environment and merge variable values for `run_job`.
+
+    Precedence (lowest to highest): collection variables < environment
+    values < supplied values - the same precedence `create_job` validates
+    against before ever persisting a job.
+
+    This does real JSON parsing (and thus real work), so - exactly like
+    `postman_inspector.inspect_collection` for `/inspect` - a caller in an
+    async request handler must invoke this via `starlette.concurrency.
+    run_in_threadpool` rather than calling it directly, to avoid blocking
+    the event loop.
+    """
+    parsed_collection = parse_collection(collection_raw, filename=collection_filename, settings=settings)
+    collection_data = parsed_collection.data
+    collection_variables = collection_variable_values(collection_data)
+
+    environment_data: dict | None = None
+    environment_values: dict[str, str] = {}
+    if environment_raw is not None:
+        parsed_env = parse_environment(
+            environment_raw, filename=environment_filename or "environment.json", settings=settings,
+        )
+        environment_data = parsed_env.data
+        environment_values = parsed_env.values
+
+    variable_values = {**collection_variables, **environment_values, **supplied_values}
+    return collection_data, environment_data, variable_values
+
+
 def _write_state(
     job_id: str,
     store: ExecutionJobStore,

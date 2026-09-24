@@ -23,8 +23,6 @@ from ...schemas import presenters
 from ...services import execution_job_service
 from ...services.fake_newman_runner import FakeNewmanRunner
 from ...services.postman_inspector import inspect_collection
-from ...services.postman_parser import parse_collection, parse_environment
-from ...services.postman_variable_resolver import collection_variable_values
 from ..deps import enforce_rate_limit, get_job_store, get_owner_key, get_store, require_owned_job
 
 router = APIRouter(prefix="/execution-jobs", tags=["execution-jobs"])
@@ -110,6 +108,30 @@ def _default_runner() -> FakeNewmanRunner:
     )
 
 
+def _coerce_supplied_values(raw: dict) -> dict[str, str]:
+    """Canonicalize JSON-decoded `supplied_values_json` entries to strings.
+
+    Only JSON strings, numbers, and booleans are accepted - `null`, arrays,
+    and objects are rejected outright rather than silently stringified
+    (`str(None)` -> "None", `str([1])` -> "[1]", `str({"a": 1})` ->
+    "{'a': 1}" would otherwise leak Python repr syntax into a variable
+    substitution). Numbers and booleans are canonicalized via `json.dumps`
+    so they read the way they would inline in JSON/a Postman request
+    (`True` -> "true", `1` -> "1", `1.5` -> "1.5"); strings pass through
+    unchanged.
+    """
+    invalid_keys = sorted(str(k) for k, v in raw.items() if not isinstance(v, (str, bool, int, float)))
+    if invalid_keys:
+        raise validation_error(
+            f"Supplied values must be strings, numbers, or booleans: invalid key(s) {', '.join(invalid_keys)}.",
+            errors=[
+                {"path": f"$.supplied_values.{k}", "detail": "Value must be a string, number, or boolean."}
+                for k in invalid_keys
+            ],
+        )
+    return {str(k): v if isinstance(v, str) else json.dumps(v) for k, v in raw.items()}
+
+
 @router.post("", status_code=202)
 async def create_execution_job(
     background_tasks: BackgroundTasks,
@@ -133,7 +155,7 @@ async def create_execution_job(
         raise validation_error("'supplied_values_json' is not valid JSON.") from exc
     if not isinstance(supplied_values, dict):
         raise validation_error("'supplied_values_json' must be a JSON object.")
-    supplied_values = {str(k): str(v) for k, v in supplied_values.items()}
+    supplied_values = _coerce_supplied_values(supplied_values)
 
     collection_raw = await collection.read()
     environment_raw = await environment.read() if environment is not None else None
@@ -158,22 +180,20 @@ async def create_execution_job(
     # job (possibly already past QUEUED, or even terminal) - scheduling a
     # background run in that case would start a second run of the same job.
     if created:
-        parsed_collection = parse_collection(collection_raw, filename=collection_filename, settings=settings)
-        collection_variables = collection_variable_values(parsed_collection.data)
-        environment_data = None
-        environment_values: dict[str, str] = {}
-        if environment_raw is not None:
-            parsed_env = parse_environment(
-                environment_raw, filename=environment_filename or "environment.json", settings=settings,
-            )
-            environment_data = parsed_env.data
-            environment_values = parsed_env.values
-        variable_values = {**collection_variables, **environment_values, **supplied_values}
+        collection_data, environment_data, variable_values = await run_in_threadpool(
+            execution_job_service.prepare_run_material,
+            collection_raw=collection_raw,
+            collection_filename=collection_filename,
+            environment_raw=environment_raw,
+            environment_filename=environment_filename,
+            supplied_values=supplied_values,
+            settings=settings,
+        )
 
         background_tasks.add_task(
             execution_job_service.run_job,
             job.id,
-            collection_data=parsed_collection.data,
+            collection_data=collection_data,
             environment_data=environment_data,
             variable_values=variable_values,
             folder_id=folder_id,

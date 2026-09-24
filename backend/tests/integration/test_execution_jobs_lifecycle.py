@@ -20,6 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_job_store
+from app.api.v1.execution_jobs import _coerce_supplied_values
 from app.domain.execution_job import ExecutionJob, ExecutionJobState
 from app.main import create_app
 from tests.fixtures.postman_builders import pm_collection, pm_request
@@ -160,6 +161,48 @@ def test_idempotency_key_returns_the_same_job(client):
         headers=headers,
     )
     assert first.json()["job_id"] == second.json()["job_id"]
+
+
+def test_coerce_supplied_values_canonicalizes_numbers_and_booleans():
+    # The HTTP path never echoes a resolved variable value back (per the
+    # project-wide no-secrets-in-responses rule), so the canonicalization
+    # itself is only observable by calling the conversion helper directly.
+    assert _coerce_supplied_values({"flag": True, "count": 1, "ratio": 1.5, "name": "raw"}) == {
+        "flag": "true",
+        "count": "1",
+        "ratio": "1.5",
+        "name": "raw",
+    }
+
+
+def test_supplied_boolean_value_is_accepted(client):
+    collection = pm_collection("Flagged", [pm_request("Ping", "GET", "https://93.184.216.34/ping?flag={{flag}}")])
+    resp = client.post(
+        "/api/v1/execution-jobs",
+        data={"confirm": "true", "supplied_values_json": json.dumps({"flag": True})},
+        files={"collection": ("c.json", json.dumps(collection).encode(), "application/json")},
+    )
+    assert resp.status_code == 202
+
+
+def test_supplied_null_value_is_rejected(client):
+    collection = pm_collection("Nullish", [pm_request("Ping", "GET", "https://93.184.216.34/ping?x={{x}}")])
+    resp = client.post(
+        "/api/v1/execution-jobs",
+        data={"confirm": "true", "supplied_values_json": json.dumps({"x": None})},
+        files={"collection": ("c.json", json.dumps(collection).encode(), "application/json")},
+    )
+    assert resp.status_code == 422
+
+
+def test_supplied_array_value_is_rejected(client):
+    collection = pm_collection("Arrayish", [pm_request("Ping", "GET", "https://93.184.216.34/ping?x={{x}}")])
+    resp = client.post(
+        "/api/v1/execution-jobs",
+        data={"confirm": "true", "supplied_values_json": json.dumps({"x": [1]})},
+        files={"collection": ("c.json", json.dumps(collection).encode(), "application/json")},
+    )
+    assert resp.status_code == 422
 
 
 def test_existing_inspect_and_analyses_endpoints_still_work(client):
