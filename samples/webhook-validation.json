@@ -1,0 +1,84 @@
+{
+  "status": "validated",
+  "jmeter_available": true,
+  "report": {
+    "executed": true,
+    "status": "validated",
+    "return_code": 0,
+    "timed_out": false,
+    "jmeter_version": "5.6.3",
+    "samplers_total": 7,
+    "samplers_success": 7,
+    "samplers_failed": 0,
+    "assertion_failures": 0,
+    "error_ratio": 0.0,
+    "correlation_variables": [
+      "merchantID",
+      "merchantGUID",
+      "webhookId"
+    ],
+    "variables_extracted": [
+      "merchantID",
+      "merchantGUID",
+      "webhookId"
+    ],
+    "variables_missing": [],
+    "required_properties": [],
+    "properties_supplied": [],
+    "sampler_results": [
+      {
+        "label": "01 GetAllMerchants",
+        "code": "200",
+        "success": true,
+        "message": "OK",
+        "assertion_failure": null
+      },
+      {
+        "label": "02 GetWebhookEvents",
+        "code": "200",
+        "success": true,
+        "message": "OK",
+        "assertion_failure": null
+      },
+      {
+        "label": "03 GetStatus",
+        "code": "200",
+        "success": true,
+        "message": "OK",
+        "assertion_failure": null
+      },
+      {
+        "label": "04 GetWebhookNotificationReportData",
+        "code": "200",
+        "success": true,
+        "message": "OK",
+        "assertion_failure": null
+      },
+      {
+        "label": "05 GetWebhookNotificationReportDataById",
+        "code": "200",
+        "success": true,
+        "message": "OK",
+        "assertion_failure": null
+      },
+      {
+        "label": "06 GetWebhookNotificationHistory",
+        "code": "200",
+        "success": true,
+        "message": "OK",
+        "assertion_failure": null
+      },
+      {
+        "label": "07 UpdateWebhookNotificationStatus",
+        "code": "200",
+        "success": true,
+        "message": "OK",
+        "assertion_failure": null
+      }
+    ],
+    "log_errors": [],
+    "reasons": [
+      "JMeter executed the plan successfully; all samplers passed."
+    ]
+  }
+}

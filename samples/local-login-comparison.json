@@ -1,0 +1,593 @@
+{
+  "collection": {
+    "item": [
+      {
+        "id": "63e733e6-283a-4aa3-abea-6c121a0471fd",
+        "name": "Login",
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8087",
+            "path": [
+              "auth",
+              "login"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "method": "POST"
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "78c44ad1-6466-47dd-8de5-ebad67b80581",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
+                "pm.collectionVariables.set('token', pm.response.json().token);"
+              ],
+              "_lastExecutionId": "35a0531e-b98c-43d6-89de-58527b31e789"
+            }
+          }
+        ]
+      },
+      {
+        "id": "f235e44a-ff5c-4d77-8e11-8223e0b79d5d",
+        "name": "Get Profile",
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8087",
+            "path": [
+              "me"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "Authorization",
+              "value": "Bearer {{token}}"
+            }
+          ],
+          "method": "GET"
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "c5f9ef26-0f7f-4663-a6a0-6a84f63dd78c",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Profile succeeds', () => pm.response.to.have.status(200));",
+                "pm.test('Correlation succeeded', () => pm.expect(pm.response.json().correlated).to.eql(true));"
+              ],
+              "_lastExecutionId": "f366c506-60e5-4fc7-b650-16819fa4702d"
+            }
+          }
+        ]
+      }
+    ],
+    "event": [],
+    "variable": [],
+    "info": {
+      "_postman_id": "5da2cc28-9f3f-4fed-98bc-54f7e8834202",
+      "name": "Local Login Correlation Demo",
+      "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    }
+  },
+  "environment": {
+    "id": "844fd91b-d3ef-43c7-b18f-28ee974a52a8",
+    "values": []
+  },
+  "globals": {
+    "id": "122f8d52-d542-4160-a0cb-c6ad42424049",
+    "values": []
+  },
+  "run": {
+    "stats": {
+      "iterations": {
+        "total": 1,
+        "pending": 0,
+        "failed": 0
+      },
+      "items": {
+        "total": 2,
+        "pending": 0,
+        "failed": 0
+      },
+      "scripts": {
+        "total": 2,
+        "pending": 0,
+        "failed": 0
+      },
+      "prerequests": {
+        "total": 2,
+        "pending": 0,
+        "failed": 0
+      },
+      "requests": {
+        "total": 2,
+        "pending": 0,
+        "failed": 0
+      },
+      "tests": {
+        "total": 2,
+        "pending": 0,
+        "failed": 0
+      },
+      "assertions": {
+        "total": 3,
+        "pending": 0,
+        "failed": 0
+      },
+      "testScripts": {
+        "total": 2,
+        "pending": 0,
+        "failed": 0
+      },
+      "prerequestScripts": {
+        "total": 0,
+        "pending": 0,
+        "failed": 0
+      }
+    },
+    "timings": {
+      "responseAverage": 19,
+      "responseMin": 4,
+      "responseMax": 34,
+      "responseSd": 15,
+      "dnsAverage": 0,
+      "dnsMin": 0,
+      "dnsMax": 0,
+      "dnsSd": 0,
+      "firstByteAverage": 0,
+      "firstByteMin": 0,
+      "firstByteMax": 0,
+      "firstByteSd": 0,
+      "started": 1790006391734,
+      "completed": 1790006391897
+    },
+    "executions": [
+      {
+        "cursor": {
+          "position": 0,
+          "iteration": 0,
+          "length": 2,
+          "cycles": 1,
+          "empty": false,
+          "eof": false,
+          "bof": true,
+          "cr": false,
+          "ref": "cf3187d2-9657-4f4b-bfdf-f7ececb02fdb",
+          "httpRequestId": "81369070-eebc-4af0-a793-24944a988c3f"
+        },
+        "item": {
+          "id": "63e733e6-283a-4aa3-abea-6c121a0471fd",
+          "name": "Login",
+          "request": {
+            "url": {
+              "protocol": "http",
+              "port": "8087",
+              "path": [
+                "auth",
+                "login"
+              ],
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "method": "POST"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "78c44ad1-6466-47dd-8de5-ebad67b80581",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token', pm.response.json().token);"
+                ],
+                "_lastExecutionId": "35a0531e-b98c-43d6-89de-58527b31e789"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8087",
+            "path": [
+              "auth",
+              "login"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "95d88cdd-31f0-4c90-bb7b-9336632b8bf2",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8087",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            },
+            {
+              "key": "Content-Length",
+              "value": "0",
+              "system": true
+            }
+          ],
+          "method": "POST"
+        },
+        "response": {
+          "id": "be44a737-1119-4a3c-99f9-6644e3da7c40",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Mon, 21 Sep 2026 15:59:51 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "68"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              116,
+              111,
+              107,
+              101,
+              110,
+              34,
+              58,
+              32,
+              34,
+              116,
+              111,
+              107,
+              95,
+              56,
+              54,
+              50,
+              54,
+              101,
+              57,
+              102,
+              52,
+              97,
+              100,
+              49,
+              97,
+              52,
+              102,
+              52,
+              49,
+              98,
+              53,
+              52,
+              100,
+              56,
+              97,
+              51,
+              98,
+              49,
+              99,
+              51,
+              102,
+              56,
+              55,
+              101,
+              51,
+              34,
+              44,
+              32,
+              34,
+              101,
+              120,
+              112,
+              105,
+              114,
+              101,
+              115,
+              73,
+              110,
+              34,
+              58,
+              32,
+              51,
+              54,
+              48,
+              48,
+              125
+            ]
+          },
+          "cookie": [],
+          "responseTime": 34,
+          "responseSize": 68
+        },
+        "id": "63e733e6-283a-4aa3-abea-6c121a0471fd",
+        "assertions": [
+          {
+            "assertion": "Login succeeds",
+            "skipped": false
+          }
+        ]
+      },
+      {
+        "cursor": {
+          "ref": "a1be9b89-80b8-492c-8154-6180d3df8b3e",
+          "length": 2,
+          "cycles": 1,
+          "position": 1,
+          "iteration": 0,
+          "httpRequestId": "381422ab-7f2d-40c8-bc94-43a7757773a3"
+        },
+        "item": {
+          "id": "f235e44a-ff5c-4d77-8e11-8223e0b79d5d",
+          "name": "Get Profile",
+          "request": {
+            "url": {
+              "protocol": "http",
+              "port": "8087",
+              "path": [
+                "me"
+              ],
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "c5f9ef26-0f7f-4663-a6a0-6a84f63dd78c",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Profile succeeds', () => pm.response.to.have.status(200));",
+                  "pm.test('Correlation succeeded', () => pm.expect(pm.response.json().correlated).to.eql(true));"
+                ],
+                "_lastExecutionId": "f366c506-60e5-4fc7-b650-16819fa4702d"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8087",
+            "path": [
+              "me"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "Authorization",
+              "value": "Bearer tok_8626e9f4ad1a4f41b54d8a3b1c3f87e3"
+            },
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "5031dc6f-9cb1-41d7-928f-b9c868e2c6fd",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8087",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            }
+          ],
+          "method": "GET"
+        },
+        "response": {
+          "id": "43f68a6b-5249-435e-a2ab-0d1a7f449333",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Mon, 21 Sep 2026 15:59:51 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "46"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              105,
+              100,
+              34,
+              58,
+              32,
+              49,
+              44,
+              32,
+              34,
+              110,
+              97,
+              109,
+              101,
+              34,
+              58,
+              32,
+              34,
+              65,
+              108,
+              105,
+              99,
+              101,
+              34,
+              44,
+              32,
+              34,
+              99,
+              111,
+              114,
+              114,
+              101,
+              108,
+              97,
+              116,
+              101,
+              100,
+              34,
+              58,
+              32,
+              116,
+              114,
+              117,
+              101,
+              125
+            ]
+          },
+          "cookie": [],
+          "responseTime": 4,
+          "responseSize": 46
+        },
+        "id": "f235e44a-ff5c-4d77-8e11-8223e0b79d5d",
+        "assertions": [
+          {
+            "assertion": "Profile succeeds",
+            "skipped": false
+          },
+          {
+            "assertion": "Correlation succeeded",
+            "skipped": false
+          }
+        ]
+      }
+    ],
+    "transfers": {
+      "responseTotal": 114
+    },
+    "failures": [],
+    "error": null
+  }
+}

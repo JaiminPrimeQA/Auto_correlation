@@ -1,0 +1,107 @@
+{
+  "collection": "Local Webhook Correlation Demo",
+  "source_reports": [
+    "webhook-baseline.json"
+  ],
+  "summary": {
+    "matched_requests": 7,
+    "automatic_candidates_found": 2,
+    "automatic_rules_accepted": 3,
+    "manual_rules_added": 0,
+    "rules_edited": 0,
+    "rules_deleted": 0,
+    "extractors_generated": {
+      "json_path": 3
+    },
+    "confirmed_correlations": 3,
+    "downstream_values_replaced": 7,
+    "externalized_secrets": [],
+    "estimated_manual_effort_saved_minutes": 21,
+    "estimate_basis": "\u22483 minutes of manual JMeter work per replaced occurrence."
+  },
+  "variables": [
+    "merchantID",
+    "merchantGUID",
+    "webhookId"
+  ],
+  "dependency_flow": [
+    {
+      "variable": "merchantID",
+      "producer": {
+        "request": "GetAllMerchants",
+        "location": "json_body:$[1].merchantID",
+        "extractor": "json_path",
+        "expression": "$[?(@.merchantID==6)].merchantID"
+      },
+      "consumers": [
+        {
+          "request": "GetWebhookNotificationReportData",
+          "location": "json_body:$.MerchantID",
+          "wrapper": null
+        }
+      ],
+      "confidence": "medium"
+    },
+    {
+      "variable": "merchantGUID",
+      "producer": {
+        "request": "GetAllMerchants",
+        "location": "json_body:$[1].merchantGUID",
+        "extractor": "json_path",
+        "expression": "$[?(@.merchantID==6)].merchantGUID"
+      },
+      "consumers": [
+        {
+          "request": "GetWebhookNotificationReportDataById",
+          "location": "query:merchantsGuid",
+          "wrapper": null
+        },
+        {
+          "request": "GetWebhookNotificationHistory",
+          "location": "query:merchantsGuid",
+          "wrapper": null
+        },
+        {
+          "request": "UpdateWebhookNotificationStatus",
+          "location": "json_body:$.merchantsGuid",
+          "wrapper": null
+        }
+      ],
+      "confidence": "medium"
+    },
+    {
+      "variable": "webhookId",
+      "producer": {
+        "request": "GetWebhookNotificationReportData",
+        "location": "json_body:$.webhookId",
+        "extractor": "json_path",
+        "expression": "$.webhookId"
+      },
+      "consumers": [
+        {
+          "request": "GetWebhookNotificationReportDataById",
+          "location": "query:webhookID",
+          "wrapper": null
+        },
+        {
+          "request": "GetWebhookNotificationHistory",
+          "location": "query:webhookID",
+          "wrapper": null
+        },
+        {
+          "request": "UpdateWebhookNotificationStatus",
+          "location": "json_body:$.webhookId",
+          "wrapper": null
+        }
+      ],
+      "confidence": "medium"
+    }
+  ],
+  "secret_handling": {
+    "externalized": [],
+    "required_properties": [],
+    "static_secrets_embedded": false,
+    "note": "External credentials are referenced via ${__P(name,)} and must be supplied at runtime, e.g. jmeter -Jname=<secret>. No secret value is embedded in the plan."
+  },
+  "warnings": []
+}

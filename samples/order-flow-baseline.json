@@ -1,0 +1,341 @@
+{
+  "collection": {
+    "info": {
+      "name": "Order Flow"
+    }
+  },
+  "run": {
+    "id": "run-Order Flow",
+    "executions": [
+      {
+        "cursor": {
+          "position": 0
+        },
+        "item": {
+          "name": "Create Order"
+        },
+        "request": {
+          "method": "POST",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "url": {
+            "raw": "https://api.example.com/orders",
+            "protocol": "https",
+            "host": [
+              "api",
+              "example",
+              "com"
+            ],
+            "port": "",
+            "path": [
+              "orders"
+            ],
+            "query": []
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "{\"item\": \"widget\", \"qty\": 2}",
+            "options": {
+              "raw": {
+                "language": "json"
+              }
+            }
+          }
+        },
+        "response": {
+          "id": "resp-Create Order",
+          "status": "Created",
+          "code": 201,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "responseTime": 42,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              111,
+              114,
+              100,
+              101,
+              114,
+              73,
+              100,
+              34,
+              58,
+              32,
+              34,
+              114,
+              101,
+              99,
+              95,
+              49,
+              49,
+              49,
+              49,
+              50,
+              50,
+              50,
+              50,
+              34,
+              44,
+              32,
+              34,
+              115,
+              116,
+              97,
+              116,
+              117,
+              115,
+              34,
+              58,
+              32,
+              34,
+              110,
+              101,
+              119,
+              34,
+              125
+            ]
+          }
+        },
+        "assertions": []
+      },
+      {
+        "cursor": {
+          "position": 1
+        },
+        "item": {
+          "name": "Get Order"
+        },
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "https://api.example.com/orders/rec_11112222",
+            "protocol": "https",
+            "host": [
+              "api",
+              "example",
+              "com"
+            ],
+            "port": "",
+            "path": [
+              "orders",
+              "rec_11112222"
+            ],
+            "query": []
+          }
+        },
+        "response": {
+          "id": "resp-Get Order",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "responseTime": 42,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              111,
+              114,
+              100,
+              101,
+              114,
+              73,
+              100,
+              34,
+              58,
+              32,
+              34,
+              114,
+              101,
+              99,
+              95,
+              49,
+              49,
+              49,
+              49,
+              50,
+              50,
+              50,
+              50,
+              34,
+              44,
+              32,
+              34,
+              115,
+              116,
+              97,
+              116,
+              117,
+              115,
+              34,
+              58,
+              32,
+              34,
+              110,
+              101,
+              119,
+              34,
+              125
+            ]
+          }
+        },
+        "assertions": []
+      },
+      {
+        "cursor": {
+          "position": 2
+        },
+        "item": {
+          "name": "Search Order"
+        },
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "https://api.example.com/orders?ref=rec_11112222",
+            "protocol": "https",
+            "host": [
+              "api",
+              "example",
+              "com"
+            ],
+            "port": "",
+            "path": [
+              "orders"
+            ],
+            "query": [
+              {
+                "key": "ref",
+                "value": "rec_11112222"
+              }
+            ]
+          }
+        },
+        "response": {
+          "id": "resp-Search Order",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "responseTime": 42,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              114,
+              101,
+              115,
+              117,
+              108,
+              116,
+              115,
+              34,
+              58,
+              32,
+              91,
+              93,
+              125
+            ]
+          }
+        },
+        "assertions": []
+      },
+      {
+        "cursor": {
+          "position": 3
+        },
+        "item": {
+          "name": "Add Note"
+        },
+        "request": {
+          "method": "POST",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "url": {
+            "raw": "https://api.example.com/notes",
+            "protocol": "https",
+            "host": [
+              "api",
+              "example",
+              "com"
+            ],
+            "port": "",
+            "path": [
+              "notes"
+            ],
+            "query": []
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "{\"orderId\": \"rec_11112222\", \"note\": \"hello\"}",
+            "options": {
+              "raw": {
+                "language": "json"
+              }
+            }
+          }
+        },
+        "response": {
+          "id": "resp-Add Note",
+          "status": "Created",
+          "code": 201,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "responseTime": 42,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              110,
+              111,
+              116,
+              101,
+              73,
+              100,
+              34,
+              58,
+              32,
+              34,
+              110,
+              49,
+              34,
+              125
+            ]
+          }
+        },
+        "assertions": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "info": {
+    "name": "Local Webhook Correlation Demo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8088"
+    }
+  ],
+  "item": [
+    {
+      "name": "GetAllMerchants",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/GetAllMerchants"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const merchant = pm.response.json().find(x => x.merchantID === 6);",
+              "pm.collectionVariables.set('merchantID', merchant.merchantID);",
+              "pm.collectionVariables.set('merchantGUID', merchant.merchantGUID);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GetWebhookEvents",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/GetWebhookEvents"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GetStatus",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/GetStatus"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GetWebhookNotificationReportData",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/GetWebhookNotificationReportData",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"MerchantID\":\"{{merchantID}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('webhookID', pm.response.json().webhookId);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GetWebhookNotificationReportDataById",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/GetWebhookNotificationReportDataById?merchantsGuid={{merchantGUID}}&webhookID={{webhookID}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GetWebhookNotificationHistory",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/GetWebhookNotificationHistory?merchantsGuid={{merchantGUID}}&webhookID={{webhookID}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "UpdateWebhookNotificationStatus",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/UpdateWebhookNotificationStatus",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"webhookId\":{{webhookID}},\"merchantsGuid\":\"{{merchantGUID}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

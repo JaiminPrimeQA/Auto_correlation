@@ -1,0 +1,27 @@
+{
+  "original_reports_identical": true,
+  "extractors": [
+    "$[?(@.merchantID==6)].merchantID",
+    "$[?(@.merchantID==6)].merchantGUID"
+  ],
+  "graph": {
+    "apis": 7,
+    "producers": 1,
+    "consumers": 3,
+    "variables": 2,
+    "edges": 3
+  },
+  "automatic_consumers": {
+    "merchantID": [
+      4
+    ],
+    "merchantGUID": [
+      5,
+      6
+    ]
+  },
+  "live_original_api_executed": false,
+  "warnings": [
+    "The two uploaded reports are identical copies of one capture. Capture a fresh second Newman run to compare dynamic values."
+  ]
+}

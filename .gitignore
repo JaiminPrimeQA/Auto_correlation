@@ -1,0 +1,42 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+npm-debug.log*
+
+# Env
+.env
+.env.local
+*.env.local
+backend/.env
+frontend/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# JMeter run artifacts
+jmeter.log
+*.jtl
+
+# Worktrees
+.worktrees/
+
+# Editor
+.vscode/
+.idea/
+
+# Bundled JMeter distribution (regenerate via scripts/provision_jmeter.sh|ps1)
+.jmeter/
+
+# Ephemeral smoke-test run output
+.smoke/

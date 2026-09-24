@@ -1,0 +1,43 @@
+{
+  "info": {
+    "name": "Local Login Correlation Demo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Login",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('token', pm.response.json().token);"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8087/auth/login"
+      }
+    },
+    {
+      "name": "Get Profile",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Profile succeeds', () => pm.response.to.have.status(200));",
+            "pm.test('Correlation succeeded', () => pm.expect(pm.response.json().correlated).to.eql(true));"
+          ]
+        }
+      }],
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+        "url": "http://127.0.0.1:8087/me"
+      }
+    }
+  ]
+}

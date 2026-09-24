@@ -1,0 +1,1810 @@
+{
+  "collection": {
+    "item": [
+      {
+        "id": "e19aff11-57da-4217-921b-b871811ca618",
+        "name": "GetAllMerchants",
+        "request": {
+          "url": {
+            "path": [
+              "GetAllMerchants"
+            ],
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "method": "GET"
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "6664daa5-647f-44dd-9cb3-164066f95822",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                "const merchant = pm.response.json().find(x => x.merchantID === 6);",
+                "pm.collectionVariables.set('merchantID', merchant.merchantID);",
+                "pm.collectionVariables.set('merchantGUID', merchant.merchantGUID);"
+              ],
+              "_lastExecutionId": "97d03c9e-96b9-45f8-85c1-eadfb2b706f3"
+            }
+          }
+        ]
+      },
+      {
+        "id": "4442a86f-1381-4f60-a813-527f65ca3b48",
+        "name": "GetWebhookEvents",
+        "request": {
+          "url": {
+            "path": [
+              "GetWebhookEvents"
+            ],
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "method": "GET"
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "f39c26c6-1df3-45bc-8a8c-e7dce5eeb3fb",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+              ],
+              "_lastExecutionId": "daeac846-2212-4c6c-94c9-a0fc10a6d63a"
+            }
+          }
+        ]
+      },
+      {
+        "id": "afaf0933-9a8e-4dfc-b6d8-98ee5563d43d",
+        "name": "GetStatus",
+        "request": {
+          "url": {
+            "path": [
+              "GetStatus"
+            ],
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "method": "GET"
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "db9000bf-e527-4396-9157-8df4393f16fd",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+              ],
+              "_lastExecutionId": "de499e6d-7d64-4d11-8aa1-cd7688d74cd6"
+            }
+          }
+        ]
+      },
+      {
+        "id": "945d369d-2f2f-44f7-bedb-1a951b0786f7",
+        "name": "GetWebhookNotificationReportData",
+        "request": {
+          "url": {
+            "path": [
+              "GetWebhookNotificationReportData"
+            ],
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "method": "POST",
+          "body": {
+            "mode": "raw",
+            "raw": "{\"MerchantID\":\"{{merchantID}}\"}",
+            "options": {
+              "raw": {
+                "language": "json"
+              }
+            }
+          }
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "bf13a834-707d-497f-bde1-076307273dd8",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                "pm.collectionVariables.set('webhookID', pm.response.json().webhookId);"
+              ],
+              "_lastExecutionId": "a9cd1a1b-2415-4b5b-a9cb-36f253f58fad"
+            }
+          }
+        ]
+      },
+      {
+        "id": "b37d6a88-f14a-4718-b070-b157c0ad315e",
+        "name": "GetWebhookNotificationReportDataById",
+        "request": {
+          "url": {
+            "path": [
+              "GetWebhookNotificationReportDataById"
+            ],
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "query": [
+              {
+                "key": "merchantsGuid",
+                "value": "{{merchantGUID}}"
+              },
+              {
+                "key": "webhookID",
+                "value": "{{webhookID}}"
+              }
+            ],
+            "variable": []
+          },
+          "method": "GET"
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "653cc376-df46-4308-b243-4877cc4963dc",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+              ],
+              "_lastExecutionId": "5d832020-5af1-4d7e-b2f3-071423fe03c5"
+            }
+          }
+        ]
+      },
+      {
+        "id": "f7af3382-b38d-4392-a7e8-250b96b1a6f8",
+        "name": "GetWebhookNotificationHistory",
+        "request": {
+          "url": {
+            "path": [
+              "GetWebhookNotificationHistory"
+            ],
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "query": [
+              {
+                "key": "merchantsGuid",
+                "value": "{{merchantGUID}}"
+              },
+              {
+                "key": "webhookID",
+                "value": "{{webhookID}}"
+              }
+            ],
+            "variable": []
+          },
+          "method": "GET"
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "191b262a-8632-4853-b2e5-ebdbc45da541",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+              ],
+              "_lastExecutionId": "f11df70c-c6b5-42f3-9e0d-6200b6805da8"
+            }
+          }
+        ]
+      },
+      {
+        "id": "9be74e62-8458-413b-92e3-331f30c8cfb3",
+        "name": "UpdateWebhookNotificationStatus",
+        "request": {
+          "url": {
+            "path": [
+              "UpdateWebhookNotificationStatus"
+            ],
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "method": "POST",
+          "body": {
+            "mode": "raw",
+            "raw": "{\"webhookId\":{{webhookID}},\"merchantsGuid\":\"{{merchantGUID}}\"}",
+            "options": {
+              "raw": {
+                "language": "json"
+              }
+            }
+          }
+        },
+        "response": [],
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "id": "8cca3635-0db1-4bc5-980f-53190d83cf54",
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+              ],
+              "_lastExecutionId": "28e6af28-6236-45cd-a26b-aece096728c5"
+            }
+          }
+        ]
+      }
+    ],
+    "event": [],
+    "variable": [
+      {
+        "type": "any",
+        "value": "http://127.0.0.1:8088",
+        "key": "baseUrl"
+      }
+    ],
+    "info": {
+      "_postman_id": "a9f7fe83-5917-450e-bf95-aef5bcf8ef59",
+      "name": "Local Webhook Correlation Demo",
+      "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    }
+  },
+  "environment": {
+    "id": "828a5830-0ccf-4b54-a3fe-abe8285738e2",
+    "values": []
+  },
+  "globals": {
+    "id": "fb5134a8-89d3-4f66-bdc3-d8474a9f2a0d",
+    "values": []
+  },
+  "run": {
+    "stats": {
+      "iterations": {
+        "total": 1,
+        "pending": 0,
+        "failed": 0
+      },
+      "items": {
+        "total": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "scripts": {
+        "total": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "prerequests": {
+        "total": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "requests": {
+        "total": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "tests": {
+        "total": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "assertions": {
+        "total": 10,
+        "pending": 0,
+        "failed": 0
+      },
+      "testScripts": {
+        "total": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "prerequestScripts": {
+        "total": 0,
+        "pending": 0,
+        "failed": 0
+      }
+    },
+    "timings": {
+      "responseAverage": 10.285714285714286,
+      "responseMin": 4,
+      "responseMax": 36,
+      "responseSd": 10.565635478343198,
+      "dnsAverage": 0,
+      "dnsMin": 0,
+      "dnsMax": 0,
+      "dnsSd": 0,
+      "firstByteAverage": 0,
+      "firstByteMin": 0,
+      "firstByteMax": 0,
+      "firstByteSd": 0,
+      "started": 1790141834808,
+      "completed": 1790141835400
+    },
+    "executions": [
+      {
+        "cursor": {
+          "position": 0,
+          "iteration": 0,
+          "length": 7,
+          "cycles": 1,
+          "empty": false,
+          "eof": false,
+          "bof": true,
+          "cr": false,
+          "ref": "eac01270-407a-43e4-929d-c70d0a2320a1",
+          "httpRequestId": "35cbac6e-65da-429d-b784-56c627653c95"
+        },
+        "item": {
+          "id": "e19aff11-57da-4217-921b-b871811ca618",
+          "name": "GetAllMerchants",
+          "request": {
+            "url": {
+              "path": [
+                "GetAllMerchants"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "6664daa5-647f-44dd-9cb3-164066f95822",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const merchant = pm.response.json().find(x => x.merchantID === 6);",
+                  "pm.collectionVariables.set('merchantID', merchant.merchantID);",
+                  "pm.collectionVariables.set('merchantGUID', merchant.merchantGUID);"
+                ],
+                "_lastExecutionId": "97d03c9e-96b9-45f8-85c1-eadfb2b706f3"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8088",
+            "path": [
+              "GetAllMerchants"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "1343a5b5-f97b-4850-a9b3-13c95b30a9ed",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8088",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            }
+          ],
+          "method": "GET"
+        },
+        "response": {
+          "id": "16006c23-39ec-4137-9c6c-98d4577f4ced",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Wed, 23 Sep 2026 05:37:14 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "167"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              91,
+              123,
+              34,
+              109,
+              101,
+              114,
+              99,
+              104,
+              97,
+              110,
+              116,
+              73,
+              68,
+              34,
+              58,
+              32,
+              54,
+              44,
+              32,
+              34,
+              109,
+              101,
+              114,
+              99,
+              104,
+              97,
+              110,
+              116,
+              71,
+              85,
+              73,
+              68,
+              34,
+              58,
+              32,
+              34,
+              50,
+              101,
+              102,
+              97,
+              55,
+              54,
+              98,
+              57,
+              45,
+              48,
+              102,
+              56,
+              101,
+              45,
+              52,
+              98,
+              52,
+              48,
+              45,
+              98,
+              48,
+              56,
+              98,
+              45,
+              48,
+              49,
+              57,
+              51,
+              102,
+              50,
+              98,
+              101,
+              102,
+              56,
+              48,
+              57,
+              34,
+              44,
+              32,
+              34,
+              110,
+              97,
+              109,
+              101,
+              34,
+              58,
+              32,
+              34,
+              68,
+              101,
+              109,
+              111,
+              34,
+              125,
+              44,
+              32,
+              123,
+              34,
+              109,
+              101,
+              114,
+              99,
+              104,
+              97,
+              110,
+              116,
+              73,
+              68,
+              34,
+              58,
+              32,
+              53,
+              44,
+              32,
+              34,
+              109,
+              101,
+              114,
+              99,
+              104,
+              97,
+              110,
+              116,
+              71,
+              85,
+              73,
+              68,
+              34,
+              58,
+              32,
+              34,
+              117,
+              110,
+              117,
+              115,
+              101,
+              100,
+              45,
+              109,
+              101,
+              114,
+              99,
+              104,
+              97,
+              110,
+              116,
+              45,
+              103,
+              117,
+              105,
+              100,
+              34,
+              44,
+              32,
+              34,
+              110,
+              97,
+              109,
+              101,
+              34,
+              58,
+              32,
+              34,
+              79,
+              116,
+              104,
+              101,
+              114,
+              34,
+              125,
+              93
+            ]
+          },
+          "cookie": [],
+          "responseTime": 36,
+          "responseSize": 167
+        },
+        "id": "e19aff11-57da-4217-921b-b871811ca618",
+        "assertions": [
+          {
+            "assertion": "HTTP 200",
+            "skipped": false
+          }
+        ]
+      },
+      {
+        "cursor": {
+          "ref": "89f84164-e4a1-4167-9dab-ce146a334c9e",
+          "length": 7,
+          "cycles": 1,
+          "position": 1,
+          "iteration": 0,
+          "httpRequestId": "2ee2df24-73f7-4317-b01f-a786d2a9693f"
+        },
+        "item": {
+          "id": "4442a86f-1381-4f60-a813-527f65ca3b48",
+          "name": "GetWebhookEvents",
+          "request": {
+            "url": {
+              "path": [
+                "GetWebhookEvents"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "f39c26c6-1df3-45bc-8a8c-e7dce5eeb3fb",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ],
+                "_lastExecutionId": "daeac846-2212-4c6c-94c9-a0fc10a6d63a"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8088",
+            "path": [
+              "GetWebhookEvents"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "3b5029c6-1e5c-487a-a4d6-e63e8e9dc465",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8088",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            }
+          ],
+          "method": "GET"
+        },
+        "response": {
+          "id": "7e01ced5-c4b5-4660-af87-bf38bb116a67",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Wed, 23 Sep 2026 05:37:14 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "42"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              91,
+              123,
+              34,
+              118,
+              97,
+              108,
+              117,
+              101,
+              34,
+              58,
+              32,
+              49,
+              44,
+              32,
+              34,
+              110,
+              97,
+              109,
+              101,
+              34,
+              58,
+              32,
+              34,
+              67,
+              85,
+              83,
+              84,
+              79,
+              77,
+              69,
+              82,
+              46,
+              67,
+              82,
+              69,
+              65,
+              84,
+              69,
+              68,
+              34,
+              125,
+              93
+            ]
+          },
+          "cookie": [],
+          "responseTime": 8,
+          "responseSize": 42
+        },
+        "id": "4442a86f-1381-4f60-a813-527f65ca3b48",
+        "assertions": [
+          {
+            "assertion": "HTTP 200",
+            "skipped": false
+          }
+        ]
+      },
+      {
+        "cursor": {
+          "ref": "727c1ec9-5f97-4b7c-a241-886662deeff2",
+          "length": 7,
+          "cycles": 1,
+          "position": 2,
+          "iteration": 0,
+          "httpRequestId": "5218f1bd-eca9-4513-a200-edcac75baf0b"
+        },
+        "item": {
+          "id": "afaf0933-9a8e-4dfc-b6d8-98ee5563d43d",
+          "name": "GetStatus",
+          "request": {
+            "url": {
+              "path": [
+                "GetStatus"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "db9000bf-e527-4396-9157-8df4393f16fd",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ],
+                "_lastExecutionId": "de499e6d-7d64-4d11-8aa1-cd7688d74cd6"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8088",
+            "path": [
+              "GetStatus"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "93f44dd0-3ec4-4cc9-b584-dc9304119fd0",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8088",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            }
+          ],
+          "method": "GET"
+        },
+        "response": {
+          "id": "a2d54de3-6aa9-43d0-a6b6-9d7acdbf8269",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Wed, 23 Sep 2026 05:37:15 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "33"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              91,
+              123,
+              34,
+              118,
+              97,
+              108,
+              117,
+              101,
+              34,
+              58,
+              32,
+              49,
+              44,
+              32,
+              34,
+              110,
+              97,
+              109,
+              101,
+              34,
+              58,
+              32,
+              34,
+              83,
+              117,
+              99,
+              99,
+              101,
+              115,
+              115,
+              34,
+              125,
+              93
+            ]
+          },
+          "cookie": [],
+          "responseTime": 5,
+          "responseSize": 33
+        },
+        "id": "afaf0933-9a8e-4dfc-b6d8-98ee5563d43d",
+        "assertions": [
+          {
+            "assertion": "HTTP 200",
+            "skipped": false
+          }
+        ]
+      },
+      {
+        "cursor": {
+          "ref": "671ba9ea-26fe-4555-aa6c-6ccb99d96ac8",
+          "length": 7,
+          "cycles": 1,
+          "position": 3,
+          "iteration": 0,
+          "httpRequestId": "b4e6d155-eb49-4404-b274-133110b23375"
+        },
+        "item": {
+          "id": "945d369d-2f2f-44f7-bedb-1a951b0786f7",
+          "name": "GetWebhookNotificationReportData",
+          "request": {
+            "url": {
+              "path": [
+                "GetWebhookNotificationReportData"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"MerchantID\":\"{{merchantID}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "bf13a834-707d-497f-bde1-076307273dd8",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('webhookID', pm.response.json().webhookId);"
+                ],
+                "_lastExecutionId": "a9cd1a1b-2415-4b5b-a9cb-36f253f58fad"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8088",
+            "path": [
+              "GetWebhookNotificationReportData"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "4b65bc14-2762-4c53-9f71-e3aaaf933db3",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8088",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            },
+            {
+              "key": "Content-Length",
+              "value": "18",
+              "system": true
+            }
+          ],
+          "method": "POST",
+          "body": {
+            "mode": "raw",
+            "raw": "{\"MerchantID\":\"6\"}",
+            "options": {
+              "raw": {
+                "language": "json"
+              }
+            }
+          }
+        },
+        "response": {
+          "id": "964d69a2-1664-434e-8c25-b6783085c39c",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Wed, 23 Sep 2026 05:37:15 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "77"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              119,
+              101,
+              98,
+              104,
+              111,
+              111,
+              107,
+              73,
+              100,
+              34,
+              58,
+              32,
+              52,
+              54,
+              55,
+              57,
+              54,
+              49,
+              44,
+              32,
+              34,
+              109,
+              101,
+              114,
+              99,
+              104,
+              97,
+              110,
+              116,
+              71,
+              85,
+              73,
+              68,
+              34,
+              58,
+              32,
+              34,
+              50,
+              101,
+              102,
+              97,
+              55,
+              54,
+              98,
+              57,
+              45,
+              48,
+              102,
+              56,
+              101,
+              45,
+              52,
+              98,
+              52,
+              48,
+              45,
+              98,
+              48,
+              56,
+              98,
+              45,
+              48,
+              49,
+              57,
+              51,
+              102,
+              50,
+              98,
+              101,
+              102,
+              56,
+              48,
+              57,
+              34,
+              125
+            ]
+          },
+          "cookie": [],
+          "responseTime": 7,
+          "responseSize": 77
+        },
+        "id": "945d369d-2f2f-44f7-bedb-1a951b0786f7",
+        "assertions": [
+          {
+            "assertion": "HTTP 200",
+            "skipped": false
+          }
+        ]
+      },
+      {
+        "cursor": {
+          "ref": "9f1b43d6-dd74-4c05-b0be-b035df343d24",
+          "length": 7,
+          "cycles": 1,
+          "position": 4,
+          "iteration": 0,
+          "httpRequestId": "2881ef0c-eb76-42eb-8680-5ed6a5ffc091"
+        },
+        "item": {
+          "id": "b37d6a88-f14a-4718-b070-b157c0ad315e",
+          "name": "GetWebhookNotificationReportDataById",
+          "request": {
+            "url": {
+              "path": [
+                "GetWebhookNotificationReportDataById"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [
+                {
+                  "key": "merchantsGuid",
+                  "value": "{{merchantGUID}}"
+                },
+                {
+                  "key": "webhookID",
+                  "value": "{{webhookID}}"
+                }
+              ],
+              "variable": []
+            },
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "653cc376-df46-4308-b243-4877cc4963dc",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+                ],
+                "_lastExecutionId": "5d832020-5af1-4d7e-b2f3-071423fe03c5"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8088",
+            "path": [
+              "GetWebhookNotificationReportDataById"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [
+              {
+                "key": "merchantsGuid",
+                "value": "2efa76b9-0f8e-4b40-b08b-0193f2bef809"
+              },
+              {
+                "key": "webhookID",
+                "value": "467961"
+              }
+            ],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "d763ed04-9a0b-436c-b2a8-a9b45504e4d5",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8088",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            }
+          ],
+          "method": "GET"
+        },
+        "response": {
+          "id": "cf70391d-2f44-4bdb-a27c-4de1735c1cca",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Wed, 23 Sep 2026 05:37:15 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "19"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              105,
+              115,
+              83,
+              117,
+              99,
+              99,
+              101,
+              115,
+              115,
+              34,
+              58,
+              32,
+              116,
+              114,
+              117,
+              101,
+              125
+            ]
+          },
+          "cookie": [],
+          "responseTime": 6,
+          "responseSize": 19
+        },
+        "id": "b37d6a88-f14a-4718-b070-b157c0ad315e",
+        "assertions": [
+          {
+            "assertion": "HTTP 200",
+            "skipped": false
+          },
+          {
+            "assertion": "Business success",
+            "skipped": false
+          }
+        ]
+      },
+      {
+        "cursor": {
+          "ref": "9e3e447a-de2d-4e83-a303-b5b6d353ec1a",
+          "length": 7,
+          "cycles": 1,
+          "position": 5,
+          "iteration": 0,
+          "httpRequestId": "345683b0-a2d3-43ac-a7fb-b133e734533e"
+        },
+        "item": {
+          "id": "f7af3382-b38d-4392-a7e8-250b96b1a6f8",
+          "name": "GetWebhookNotificationHistory",
+          "request": {
+            "url": {
+              "path": [
+                "GetWebhookNotificationHistory"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [
+                {
+                  "key": "merchantsGuid",
+                  "value": "{{merchantGUID}}"
+                },
+                {
+                  "key": "webhookID",
+                  "value": "{{webhookID}}"
+                }
+              ],
+              "variable": []
+            },
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "191b262a-8632-4853-b2e5-ebdbc45da541",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+                ],
+                "_lastExecutionId": "f11df70c-c6b5-42f3-9e0d-6200b6805da8"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8088",
+            "path": [
+              "GetWebhookNotificationHistory"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [
+              {
+                "key": "merchantsGuid",
+                "value": "2efa76b9-0f8e-4b40-b08b-0193f2bef809"
+              },
+              {
+                "key": "webhookID",
+                "value": "467961"
+              }
+            ],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "9d91637d-82cb-42f8-94eb-ba333bcd64da",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8088",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            }
+          ],
+          "method": "GET"
+        },
+        "response": {
+          "id": "bc444225-2c2d-4110-bf26-8940ec80a561",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Wed, 23 Sep 2026 05:37:15 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "19"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              105,
+              115,
+              83,
+              117,
+              99,
+              99,
+              101,
+              115,
+              115,
+              34,
+              58,
+              32,
+              116,
+              114,
+              117,
+              101,
+              125
+            ]
+          },
+          "cookie": [],
+          "responseTime": 4,
+          "responseSize": 19
+        },
+        "id": "f7af3382-b38d-4392-a7e8-250b96b1a6f8",
+        "assertions": [
+          {
+            "assertion": "HTTP 200",
+            "skipped": false
+          },
+          {
+            "assertion": "Business success",
+            "skipped": false
+          }
+        ]
+      },
+      {
+        "cursor": {
+          "ref": "86a84ecc-b615-409c-8b26-7ed77468dbbc",
+          "length": 7,
+          "cycles": 1,
+          "position": 6,
+          "iteration": 0,
+          "httpRequestId": "2e2a52b5-a99e-462b-a92a-4ac31f1ed312"
+        },
+        "item": {
+          "id": "9be74e62-8458-413b-92e3-331f30c8cfb3",
+          "name": "UpdateWebhookNotificationStatus",
+          "request": {
+            "url": {
+              "path": [
+                "UpdateWebhookNotificationStatus"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"webhookId\":{{webhookID}},\"merchantsGuid\":\"{{merchantGUID}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "8cca3635-0db1-4bc5-980f-53190d83cf54",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Business success', () => pm.expect(pm.response.json().isSuccess).to.eql(true));"
+                ],
+                "_lastExecutionId": "28e6af28-6236-45cd-a26b-aece096728c5"
+              }
+            }
+          ]
+        },
+        "request": {
+          "url": {
+            "protocol": "http",
+            "port": "8088",
+            "path": [
+              "UpdateWebhookNotificationStatus"
+            ],
+            "host": [
+              "127",
+              "0",
+              "0",
+              "1"
+            ],
+            "query": [],
+            "variable": []
+          },
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "User-Agent",
+              "value": "PostmanRuntime/7.39.1",
+              "system": true
+            },
+            {
+              "key": "Accept",
+              "value": "*/*",
+              "system": true
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-cache",
+              "system": true
+            },
+            {
+              "key": "Postman-Token",
+              "value": "9b9be6e2-3a77-4b6b-bd18-b577fea5dc5f",
+              "system": true
+            },
+            {
+              "key": "Host",
+              "value": "127.0.0.1:8088",
+              "system": true
+            },
+            {
+              "key": "Accept-Encoding",
+              "value": "gzip, deflate, br",
+              "system": true
+            },
+            {
+              "key": "Connection",
+              "value": "keep-alive",
+              "system": true
+            },
+            {
+              "key": "Content-Length",
+              "value": "75",
+              "system": true
+            }
+          ],
+          "method": "POST",
+          "body": {
+            "mode": "raw",
+            "raw": "{\"webhookId\":467961,\"merchantsGuid\":\"2efa76b9-0f8e-4b40-b08b-0193f2bef809\"}",
+            "options": {
+              "raw": {
+                "language": "json"
+              }
+            }
+          }
+        },
+        "response": {
+          "id": "2d9b4160-9b24-4fcd-a1aa-98eed10cefdd",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Server",
+              "value": "BaseHTTP/0.6 Python/3.14.0"
+            },
+            {
+              "key": "Date",
+              "value": "Wed, 23 Sep 2026 05:37:15 GMT"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Length",
+              "value": "19"
+            }
+          ],
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              105,
+              115,
+              83,
+              117,
+              99,
+              99,
+              101,
+              115,
+              115,
+              34,
+              58,
+              32,
+              116,
+              114,
+              117,
+              101,
+              125
+            ]
+          },
+          "cookie": [],
+          "responseTime": 6,
+          "responseSize": 19
+        },
+        "id": "9be74e62-8458-413b-92e3-331f30c8cfb3",
+        "assertions": [
+          {
+            "assertion": "HTTP 200",
+            "skipped": false
+          },
+          {
+            "assertion": "Business success",
+            "skipped": false
+          }
+        ]
+      }
+    ],
+    "transfers": {
+      "responseTotal": 376
+    },
+    "failures": [],
+    "error": null
+  }
+}

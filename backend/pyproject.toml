@@ -1,0 +1,28 @@
+[project]
+name = "baseline11-auto-correlate"
+version = "0.1.0"
+description = "Newman JSON to auto-correlated JMeter JMX"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# E501: long lines; B008: FastAPI Depends() in defaults is idiomatic;
+# UP042: `str, Enum` is intentional for broad JSON-serialisation compatibility.
+ignore = ["E501", "B008", "UP042"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "slow: tests that launch a real JMeter run (deselect with -m 'not slow')",
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = false
