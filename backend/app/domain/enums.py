@@ -128,3 +128,21 @@ class HandlingHint(str, Enum):
     JMETER_PROPERTY = "jmeter_property"          # external credential / secret
     IGNORE = "ignore"                            # noise
     MANUAL_REVIEW = "manual_review"              # review required
+
+
+class VariableSource(str, Enum):
+    """Where a discovered Postman variable's value would come from, in precedence order."""
+
+    SUPPLIED = "supplied"
+    ENVIRONMENT = "environment"
+    COLLECTION = "collection"
+    DYNAMIC = "dynamic"          # Postman built-in, e.g. {{$guid}} - resolved by Newman itself
+    UNRESOLVED = "unresolved"
+
+
+class UnsupportedFeatureKind(str, Enum):
+    LOCAL_DATA_FILE = "local_data_file"
+    INTERACTIVE_AUTH = "interactive_auth"
+    CLIENT_CERTIFICATE = "client_certificate"
+    NON_HTTP_PROTOCOL = "non_http_protocol"
+    DYNAMIC_REQUEST_CONSTRUCTION = "dynamic_request_construction"
