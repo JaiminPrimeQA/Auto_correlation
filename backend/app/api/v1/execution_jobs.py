@@ -204,7 +204,10 @@ async def delete_execution_job(
     # job). `mutate` returns None if the job is already gone/expired, in
     # which case there is nothing left to cancel or delete.
     result = job_store.mutate(job.id, _cancel_if_active)
-    if result is not None and not cancelled:
+    if result is not None and not cancelled and not result.worker_active:
         # The job was already terminal (or became terminal before the
-        # mutate ran) - nothing to cancel, so remove it outright.
+        # mutate ran) - nothing to cancel, so remove it outright. A terminal
+        # job whose worker is still live is kept (cancelled) until the worker
+        # finishes: removing it would free the owner's concurrency slot while
+        # the worker still runs. A later DELETE, or TTL cleanup, removes it.
         job_store.delete(job.id)

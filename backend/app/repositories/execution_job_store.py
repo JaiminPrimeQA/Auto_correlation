@@ -20,6 +20,14 @@ def too_many_active_jobs(max_active: int) -> ProblemException:
     return rate_limited(f"Too many active execution jobs ({max_active} allowed at a time).")
 
 
+def _is_evictable(job: ExecutionJob, now: float) -> bool:
+    """Past its TTL and not being driven by a live worker - a running job must
+    never silently vanish mid-run; it becomes evictable once the worker clears
+    `worker_active`.
+    """
+    return job.expires_at < now and not job.worker_active
+
+
 class ExecutionJobStore(ABC):
     @abstractmethod
     def create(self, job: ExecutionJob) -> None: ...
@@ -82,7 +90,7 @@ class InMemoryExecutionJobStore(ExecutionJobStore):
             job = self._data.get(job_id)
             if job is None:
                 return None
-            if job.expires_at < time.time():
+            if _is_evictable(job, time.time()):
                 self._data.pop(job_id, None)
                 return None
             return job
@@ -127,7 +135,7 @@ class InMemoryExecutionJobStore(ExecutionJobStore):
             job = self._data.get(job_id)
             if job is None:
                 return None
-            if job.expires_at < time.time():
+            if _is_evictable(job, time.time()):
                 self._data.pop(job_id, None)
                 return None
             fn(job)
@@ -146,7 +154,7 @@ class InMemoryExecutionJobStore(ExecutionJobStore):
             for job in self._data.values()
             if job.owner_key == owner_key
             and job.idempotency_key == idempotency_key
-            and job.expires_at >= now
+            and not _is_evictable(job, now)
             and job.created_at >= cutoff
         ]
         if not candidates:
@@ -154,10 +162,14 @@ class InMemoryExecutionJobStore(ExecutionJobStore):
         return max(candidates, key=lambda j: j.created_at)
 
     def _count_active_locked(self, owner_key: str) -> int:
-        return sum(1 for j in self._data.values() if j.owner_key == owner_key and j.is_active)
+        # A job whose worker is still live counts even if already terminal
+        # (e.g. cancelled mid-run), so cancel-and-resubmit cannot exceed the cap.
+        return sum(
+            1 for j in self._data.values() if j.owner_key == owner_key and (j.is_active or j.worker_active)
+        )
 
     def _cleanup(self) -> None:
         now = time.time()
-        expired = [jid for jid, j in self._data.items() if j.expires_at < now]
+        expired = [jid for jid, j in self._data.items() if _is_evictable(j, now)]
         for jid in expired:
             self._data.pop(jid, None)

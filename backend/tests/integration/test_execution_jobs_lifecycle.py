@@ -156,6 +156,31 @@ def test_delete_active_job_cancels_it(client):
     assert get_resp.json()["state"] == "cancelled"
 
 
+def test_delete_keeps_a_cancelled_job_whose_worker_is_still_running(client):
+    # Removing it would release the owner's concurrency slot while the worker
+    # still runs (cancel -> delete -> resubmit bypass of F4(b)).
+    job = ExecutionJob(
+        id="job-cancelled-live-worker",
+        owner_key="testclient",
+        collection_name="Live",
+        created_at=time.time(),
+        expires_at=time.time() + 60,
+        state=ExecutionJobState.CANCELLED,
+        cancel_requested=True,
+        worker_active=True,
+    )
+    get_job_store().create(job)
+
+    assert client.delete(f"/api/v1/execution-jobs/{job.id}").status_code == 204
+    get_resp = client.get(f"/api/v1/execution-jobs/{job.id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["state"] == "cancelled"
+
+    get_job_store().mutate(job.id, lambda j: setattr(j, "worker_active", False))
+    assert client.delete(f"/api/v1/execution-jobs/{job.id}").status_code == 204
+    assert client.get(f"/api/v1/execution-jobs/{job.id}").status_code == 404
+
+
 def test_other_owners_job_is_404_for_get_and_delete(client):
     job = ExecutionJob(
         id="job-other-owner",

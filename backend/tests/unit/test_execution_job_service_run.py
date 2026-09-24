@@ -179,7 +179,7 @@ class _CancellingRunner:
         self.outcome = outcome
         self.calls: list[RunInput] = []
 
-    def run(self, run_input: RunInput) -> RunOutcome:
+    def run(self, run_input: RunInput, *, should_cancel=None) -> RunOutcome:
         self.calls.append(run_input)
         job = self.store.get(self.job_id)
         job.cancel_requested = True
@@ -211,7 +211,7 @@ class _DeletingRunner:
         self.outcome = outcome
         self.calls: list[RunInput] = []
 
-    def run(self, run_input: RunInput) -> RunOutcome:
+    def run(self, run_input: RunInput, *, should_cancel=None) -> RunOutcome:
         self.calls.append(run_input)
         self.store.delete(self.job_id)
         return self.outcome
@@ -237,7 +237,7 @@ class _TerminalWritingRunner:
         self.outcome = outcome
         self.calls: list[RunInput] = []
 
-    def run(self, run_input: RunInput) -> RunOutcome:
+    def run(self, run_input: RunInput, *, should_cancel=None) -> RunOutcome:
         self.calls.append(run_input)
         job = self.store.get(self.job_id)
         job.state = ExecutionJobState.FAILED
@@ -296,7 +296,7 @@ class _RaisingRunner:
     def __init__(self) -> None:
         self.calls: list[RunInput] = []
 
-    def run(self, run_input: RunInput) -> RunOutcome:
+    def run(self, run_input: RunInput, *, should_cancel=None) -> RunOutcome:
         self.calls.append(run_input)
         raise RuntimeError("secret_token=abc123 leaked here")
 
@@ -612,3 +612,130 @@ def test_run_input_carries_only_the_supplied_values():
     assert store.get(job.id).state == ExecutionJobState.READY
     assert [c.supplied_values for c in runner.calls] == [{"token": "supplied-token"}] * 2
     assert not hasattr(runner.calls[0], "variable_values")
+
+
+# --- F4: cancellation reaches the runner; the cap counts live workers ---
+
+
+def _cancel_like_delete_endpoint(store, job_id) -> None:
+    def _cancel(j: ExecutionJob) -> None:
+        j.cancel_requested = True
+        j.state = ExecutionJobState.CANCELLED
+        j.stage_history.append("cancelled")
+
+    store.mutate(job_id, _cancel)
+
+
+class _ProbeRunner:
+    """Records should_cancel() before/after a mid-run cancel, and the job's
+    worker_active flag plus the owner's active count as seen from inside run().
+    """
+
+    def __init__(self, store, job_id, *, cancel_mid_run: bool, outcomes) -> None:
+        self.store = store
+        self.job_id = job_id
+        self.cancel_mid_run = cancel_mid_run
+        self.outcomes = list(outcomes)
+        self.calls: list[RunInput] = []
+        self.observed: list[dict] = []
+
+    def run(self, run_input: RunInput, *, should_cancel) -> RunOutcome:
+        self.calls.append(run_input)
+        seen = {"before": should_cancel(), "worker_active": self.store.get(self.job_id).worker_active}
+        if self.cancel_mid_run:
+            _cancel_like_delete_endpoint(self.store, self.job_id)
+            seen["count_active_after_cancel"] = self.store.count_active("127.0.0.1")
+            try:
+                self.store.create_if_allowed(
+                    ExecutionJob(id="resubmit", owner_key="127.0.0.1", collection_name="d",
+                                 created_at=time.time(), expires_at=time.time() + 60),
+                    window_seconds=600, max_active=1,
+                )
+                seen["resubmit"] = "created"
+            except Exception as exc:  # noqa: BLE001 - recorded for assertion
+                seen["resubmit"] = getattr(exc, "status", type(exc).__name__)
+        seen["after"] = should_cancel()
+        self.observed.append(seen)
+        return self.outcomes.pop(0)
+
+
+def test_should_cancel_reflects_a_cancel_requested_mid_run():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = _ProbeRunner(store, job.id, cancel_mid_run=True,
+                          outcomes=[RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111"))])
+    _run(job, runner, store)
+    assert runner.observed[0]["before"] is False
+    assert runner.observed[0]["after"] is True
+    assert store.get(job.id).state == ExecutionJobState.CANCELLED
+    assert len(runner.calls) == 1
+
+
+def test_should_cancel_is_true_when_the_job_is_deleted_mid_run():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    results: list[bool] = []
+
+    class _DeleteThenProbe:
+        def run(self, run_input: RunInput, *, should_cancel) -> RunOutcome:
+            store.delete(job.id)
+            results.append(should_cancel())
+            return RunOutcome(success=True, report_bytes=_newman_report("tok"))
+
+    _run(job, _DeleteThenProbe(), store)
+    assert results == [True]
+    assert store.get(job.id) is None  # finally-clear tolerated the missing job; nothing resurrected
+
+
+def test_worker_active_is_set_during_the_run_and_cleared_after():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = _ProbeRunner(store, job.id, cancel_mid_run=False, outcomes=[
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    _run(job, runner, store)
+    assert [o["worker_active"] for o in runner.observed] == [True, True]
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.READY
+    assert final.worker_active is False
+
+
+def test_worker_active_is_cleared_even_after_an_unexpected_exception():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://internal.example.test/x")])
+
+    def raising_resolver(hostname: str) -> list[str]:
+        raise OSError("boom")
+
+    _run(job, FakeNewmanRunner([]), store, collection_data=collection, resolver=raising_resolver)
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.FAILED
+    assert final.worker_active is False
+
+
+def test_cancel_and_resubmit_cannot_exceed_the_cap_while_the_worker_runs():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = _ProbeRunner(store, job.id, cancel_mid_run=True,
+                          outcomes=[RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111"))])
+    _run(job, runner, store)
+    seen = runner.observed[0]
+    assert seen["count_active_after_cancel"] == 1  # cancelled, but its worker is still live
+    assert seen["resubmit"] == 429
+    assert store.get("resubmit") is None
+    assert store.count_active("127.0.0.1") == 0  # worker finished -> slot released
+
+
+def test_job_already_claimed_by_a_live_worker_is_not_run_twice():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    job.worker_active = True
+    store.update(job)
+    runner = FakeNewmanRunner([])
+    _run(job, runner, store)
+    assert runner.calls == []
+    final = store.get(job.id)
+    assert final.state == ExecutionJobState.QUEUED
+    assert final.worker_active is True  # the other worker's claim is left untouched

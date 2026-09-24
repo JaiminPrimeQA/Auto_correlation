@@ -8,19 +8,28 @@ what `get_newman_runner` returns when `Settings.newman_runner == "fake"`.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ..domain.execution_job import NewmanRunner, RunInput, RunOutcome
+
+
+def _never_cancel() -> bool:
+    return False
 
 
 @dataclass
 class FakeNewmanRunner(NewmanRunner):
     outcomes: list[RunOutcome]
     calls: list[RunInput] = field(default_factory=list)
+    # The `should_cancel` callable passed on each call (it is otherwise ignored:
+    # the fake returns instantly, so there is nothing to interrupt).
+    cancel_checks: list[Callable[[], bool]] = field(default_factory=list)
     _call_count: int = field(default=0)
 
-    def run(self, run_input: RunInput) -> RunOutcome:
+    def run(self, run_input: RunInput, *, should_cancel: Callable[[], bool] = _never_cancel) -> RunOutcome:
         self.calls.append(run_input)
+        self.cancel_checks.append(should_cancel)
         if self._call_count >= len(self.outcomes):
             raise IndexError("Fake runner exhausted")
         result = self.outcomes[self._call_count]

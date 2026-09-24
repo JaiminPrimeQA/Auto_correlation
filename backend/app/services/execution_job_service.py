@@ -196,12 +196,27 @@ def _write_state(
     return result is not None and written
 
 
-def _run_safely(runner: NewmanRunner, run_input: RunInput) -> RunOutcome | None:
+def _cancellation_probe(job_id: str, store: ExecutionJobStore) -> Callable[[], bool]:
+    """A `should_cancel` callable for the runner: re-reads the job from the
+    store on every call and reports True once cancellation was requested or
+    the job is gone (deleted/expired).
+    """
+
+    def _should_cancel() -> bool:
+        job = store.get(job_id)
+        return job is None or job.cancel_requested
+
+    return _should_cancel
+
+
+def _run_safely(
+    runner: NewmanRunner, run_input: RunInput, should_cancel: Callable[[], bool],
+) -> RunOutcome | None:
     """Run the Newman runner, turning any exception into `None` so the caller
     never lets exception text (which may contain secrets) reach job fields.
     """
     try:
-        return runner.run(run_input)
+        return runner.run(run_input, should_cancel=should_cancel)
     except Exception:
         return None
 
@@ -237,7 +252,7 @@ def _run_stage(
     """
     if not _write_state(job_id, store, stage):
         return None
-    outcome = _run_safely(runner, make_run_input())
+    outcome = _run_safely(runner, make_run_input(), _cancellation_probe(job_id, store))
     if outcome is None:
         _write_state(
             job_id, store, ExecutionJobState.FAILED,
@@ -295,13 +310,26 @@ def run_job(
     the runner (Newman resolves collection/environment variables natively).
 
     Every path ends in a terminal state (or a deliberate no-op when the job is
-    missing, not queued, already terminal, or cancelled) so a job never gets
+    missing, not queued, already claimed by another worker, terminal, or
+    cancelled) so a job never gets
     stuck counting against the owner's concurrency cap - including when
     something inside the drive logic raises an exception we did not
     specifically anticipate (e.g. a resolver or the analysis store itself).
     """
-    job = store.get(job_id)
-    if job is None or job.state != ExecutionJobState.QUEUED:
+    # Atomically claim the job for this worker: only a QUEUED job that no
+    # other worker is driving may start. `worker_active` keeps the job counted
+    # against the owner's cap (and safe from TTL eviction) until the `finally`
+    # below releases it - even if it is cancelled mid-run.
+    claimed = False
+
+    def _claim(fresh: ExecutionJob) -> None:
+        nonlocal claimed
+        if fresh.state == ExecutionJobState.QUEUED and not fresh.worker_active:
+            fresh.worker_active = True
+            claimed = True
+
+    store.mutate(job_id, _claim)
+    if not claimed:
         return
 
     try:
@@ -316,6 +344,13 @@ def run_job(
             job_id, store, ExecutionJobState.FAILED,
             error_code="unexpected_error", error_detail="The execution job failed unexpectedly.",
         )
+    finally:
+        # Tolerates a missing job: `mutate` is a no-op returning None then.
+        store.mutate(job_id, _release_worker)
+
+
+def _release_worker(job: ExecutionJob) -> None:
+    job.worker_active = False
 
 
 def _drive_job(

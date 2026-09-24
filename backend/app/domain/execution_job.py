@@ -8,6 +8,7 @@ variables during execution, never on this persisted record.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol
@@ -16,6 +17,11 @@ _TERMINAL = frozenset({"ready", "failed", "cancelled", "expired"})
 
 
 class ExecutionJobState(str, Enum):
+    """Job lifecycle states. Phase 2 produces QUEUED through CANCELLED;
+    `uploaded`, `awaiting_variables`, and `expired` are reserved for later
+    phases and are never produced yet.
+    """
+
     UPLOADED = "uploaded"
     AWAITING_VARIABLES = "awaiting_variables"
     QUEUED = "queued"
@@ -66,7 +72,12 @@ class RunOutcome:
 
 
 class NewmanRunner(Protocol):
-    def run(self, run_input: RunInput) -> RunOutcome: ...
+    def run(self, run_input: RunInput, *, should_cancel: Callable[[], bool]) -> RunOutcome:
+        """Execute one Newman run. `should_cancel` re-reads the job from the
+        store; a real runner polls it and stops early (returning a failed,
+        sanitized outcome) once it returns True.
+        """
+        ...
 
 
 @dataclass
@@ -84,6 +95,10 @@ class ExecutionJob:
     stage_history: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     cancel_requested: bool = False
+    # True while a `run_job` worker is driving this job. A job with a live
+    # worker counts against the owner's concurrency cap even once terminal
+    # (e.g. cancelled mid-run), and TTL cleanup never evicts it.
+    worker_active: bool = False
 
     @property
     def is_active(self) -> bool:

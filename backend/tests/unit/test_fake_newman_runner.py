@@ -26,6 +26,16 @@ def test_records_every_call():
     assert runner.calls == [a, b]
 
 
+def test_accepts_and_records_the_should_cancel_callable():
+    runner = FakeNewmanRunner([RunOutcome(success=True)])
+
+    def never() -> bool:
+        return False
+
+    runner.run(_run_input(), should_cancel=never)
+    assert runner.cancel_checks == [never]
+
+
 def test_raises_if_called_more_times_than_outcomes_configured():
     runner = FakeNewmanRunner([RunOutcome(success=True)])
     runner.run(_run_input())

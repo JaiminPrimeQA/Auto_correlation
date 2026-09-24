@@ -156,3 +156,42 @@ def test_create_if_allowed_raises_429_at_cap_and_inserts_nothing(store):
     assert exc.value.status == 429
     assert exc.value.code == "rate_limited"
     assert store.get("c") is None
+
+
+# --- F4(b): a live worker counts against the cap even after the job is terminal ---
+
+
+def test_count_active_counts_a_terminal_job_whose_worker_is_still_running(store):
+    store.create(_job(id="a", owner="o", state=ExecutionJobState.CANCELLED, worker_active=True))
+    store.create(_job(id="b", owner="o", state=ExecutionJobState.CANCELLED, worker_active=False))
+    assert store.count_active("o") == 1
+
+
+def test_create_if_allowed_cap_counts_live_workers(store):
+    store.create(_job(id="a", owner="o", state=ExecutionJobState.CANCELLED, worker_active=True))
+    with pytest.raises(ProblemException) as exc:
+        store.create_if_allowed(_job(id="b", owner="o"), window_seconds=600, max_active=1)
+    assert exc.value.status == 429
+
+
+# --- F4(c): TTL cleanup never evicts a job with a live worker ---
+
+
+def test_expired_job_with_a_live_worker_is_never_evicted(store):
+    store.create(_job(id="a", owner="o", ttl=-1, worker_active=True))
+    store.create(_job(id="b", owner="o", ttl=-1))  # triggers nothing special; plain expired job
+    assert store.get("b") is None  # plain expired job is evicted (and cleanup ran)
+    assert store.get("a") is not None
+    assert store.count_active("o") == 1
+    assert store.mutate("a", lambda j: None) is not None
+
+
+def test_expired_job_is_evicted_once_its_worker_finishes(store):
+    store.create(_job(id="a", owner="o", ttl=-1, worker_active=True))
+
+    def _finish(j: ExecutionJob) -> None:
+        j.worker_active = False
+
+    assert store.mutate("a", _finish) is not None
+    assert store.get("a") is None
+    assert store.count_active("o") == 0
