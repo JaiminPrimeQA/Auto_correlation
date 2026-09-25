@@ -51,7 +51,7 @@
 **Interfaces:**
 - Produces: `VariableSource.SCRIPT = "script"`; `script_set_variable_names(collection_data: dict) -> set[str]`; `resolve_variables(references, *, collection_variables, environment_values, supplied=None, script_set=None)` — a name with no supplied/environment/collection value that appears in `script_set` gets source `SCRIPT` (not `UNRESOLVED`), so `unresolved_names` excludes it.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `backend/tests/unit/test_postman_script_variables.py`:
 
@@ -150,12 +150,12 @@ def test_variable_set_by_a_producer_script_does_not_block_creation():
 
 (Check `pm_request`'s `headers` parameter shape in `tests/fixtures/postman_builders.py` and match it.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_postman_script_variables.py tests/unit/test_postman_variable_resolver.py tests/unit/test_execution_job_service_create.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.postman_script_variables'`, `TypeError ... unexpected keyword argument 'script_set'`, and the create test fails with a 422 `ProblemException` naming `token`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `backend/app/domain/enums.py`, add to `VariableSource` after `DYNAMIC`:
 
@@ -249,12 +249,12 @@ In `backend/app/services/postman_inspector.py`: import `from .postman_script_var
 
 In `backend/app/services/execution_job_service.py` `create_job`: import the same function and pass `script_set=script_set_variable_names(collection_data)` to its `resolve_variables` call.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_postman_script_variables.py tests/unit/test_postman_variable_resolver.py tests/unit/test_execution_job_service_create.py tests/unit/test_postman_inspector.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/domain/enums.py backend/app/services/postman_script_variables.py backend/app/services/postman_variable_resolver.py backend/app/services/postman_inspector.py backend/app/services/execution_job_service.py backend/tests/unit/test_postman_script_variables.py backend/tests/unit/test_postman_variable_resolver.py backend/tests/unit/test_execution_job_service_create.py
@@ -276,7 +276,7 @@ git commit -m "feat(postman): treat script-set variables as runtime-provided, no
 **Interfaces:**
 - Produces: `DomainReport.pinned_addresses: dict[str, list[str]]` — for every validated *hostname* (IP-literal hosts excluded), the sorted IP-literal addresses the resolver returned; `RunInput.host_pins: dict[str, list[str]] = field(default_factory=dict)` (last field, defaulted); `_drive_job` fills it from `domain_report.pinned_addresses` (deep-copied per run).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `backend/tests/unit/test_postman_domain_extractor.py` (reuse that file's existing imports/helpers; a fake resolver is a plain function):
 
@@ -316,12 +316,12 @@ def test_runner_receives_the_validated_host_pins():
     assert runner.calls[0].host_pins is not runner.calls[1].host_pins
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_postman_domain_extractor.py tests/unit/test_execution_job_service_run.py -v`
 Expected: FAIL — `AttributeError: 'DomainReport' object has no attribute 'pinned_addresses'` and `AttributeError: 'RunInput' object has no attribute 'host_pins'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `postman_domain_extractor.py`:
 
@@ -366,12 +366,12 @@ In `execution_job_service.py` `_drive_job`, add to the `RunInput(...)` built in 
             host_pins=copy.deepcopy(domain_report.pinned_addresses),
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_postman_domain_extractor.py tests/unit/test_execution_job_service_run.py tests/unit/test_postman_inspector.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/postman_domain_extractor.py backend/app/domain/execution_job.py backend/app/services/execution_job_service.py backend/tests/unit/test_postman_domain_extractor.py backend/tests/unit/test_execution_job_service_run.py
@@ -390,7 +390,7 @@ git commit -m "feat(execution-job): pin validated DNS answers into each run's in
 **Interfaces:**
 - Produces: `Settings.newman_runner: Literal["disabled", "fake", "docker"] = "disabled"`; `newman_docker_image = "baseline11/newman:6.2.2"`; `newman_version = "6.2.2"`; `newman_container_memory = "512m"`; `newman_container_cpus = "1.0"`; `newman_container_pids_limit = 256`; `newman_request_timeout_ms = 30_000`; `newman_start_grace_seconds = 30`; `docker_binary = "docker"`; `max_concurrent_executions = 4`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/unit/test_config_newman_runner.py
@@ -415,12 +415,12 @@ def test_docker_is_an_accepted_runner_mode():
     assert Settings(newman_runner="docker").newman_runner == "docker"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_config_newman_runner.py -v`
 Expected: FAIL — `AttributeError: 'Settings' object has no attribute 'newman_docker_image'` (and a validation error for `"docker"`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `backend/app/core/config.py`, change the existing `newman_runner` line to `newman_runner: Literal["disabled", "fake", "docker"] = "disabled"` and add directly below it:
 
@@ -454,12 +454,12 @@ WORKDIR /home/node
 ENTRYPOINT ["newman"]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_config_newman_runner.py tests/unit/test_config_execution_job.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docker/newman/Dockerfile backend/app/core/config.py backend/tests/unit/test_config_newman_runner.py
@@ -478,7 +478,7 @@ git commit -m "feat(newman): add pinned Newman 6.2.2 image and Docker runner set
 - Consumes: `RunInput` (Phase 2, + `host_pins` from Task 2).
 - Produces: `CONTAINER_WORKDIR = "/job"`; `NewmanWorkspace(root, collection_path, environment_path, report_path, files_dir)` (frozen dataclass of `Path`s); `build_environment(environment_data: dict | None, supplied_values: dict[str, str]) -> dict`; `newman_workspace(run_input: RunInput, *, base_dir: Path | None = None)` — a context manager yielding a `NewmanWorkspace` and always deleting the directory on exit.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/unit/test_newman_workspace.py
@@ -555,12 +555,12 @@ def test_workspace_permissions_are_private(tmp_path):
         assert stat.S_IMODE(ws.collection_path.stat().st_mode) == 0o600
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_newman_workspace.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.newman_workspace'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # backend/app/services/newman_workspace.py
@@ -647,12 +647,12 @@ def newman_workspace(run_input: RunInput, *, base_dir: Path | None = None) -> It
         shutil.rmtree(root, ignore_errors=True)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_newman_workspace.py -v`
 Expected: PASS (the POSIX-permission test is skipped on Windows).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/newman_workspace.py backend/tests/unit/test_newman_workspace.py
@@ -673,7 +673,7 @@ git commit -m "feat(newman): add private per-run workspace with supplied values 
 **Interfaces:**
 - Produces: `class AmbiguousFolderError(ValueError)`; `folder_run_name(collection_data: dict, folder_id: str) -> str` — returns the folder's `name`; raises `KeyError` for an unknown id and `AmbiguousFolderError` if any other folder in the collection has the same name. `create_job` raises `validation_error` (422) for an ambiguous folder.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `backend/tests/unit/test_postman_folder_extractor.py`:
 
@@ -727,12 +727,12 @@ def test_ambiguously_named_folder_is_rejected_at_creation():
 
 (Import `pm_folder` at the top of that test file if it is not already imported.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_postman_folder_extractor.py tests/unit/test_execution_job_service_create.py -v`
 Expected: FAIL — `ImportError: cannot import name 'AmbiguousFolderError'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `backend/app/services/postman_folder_extractor.py`:
 
@@ -766,12 +766,12 @@ In `create_job`, right after the existing unknown-`folder_id` check (A4), add:
 
 (import `AmbiguousFolderError, folder_run_name` alongside the existing `extract_folders` import).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_postman_folder_extractor.py tests/unit/test_execution_job_service_create.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/postman_folder_extractor.py backend/app/services/execution_job_service.py backend/tests/unit/test_postman_folder_extractor.py backend/tests/unit/test_execution_job_service_create.py
@@ -790,7 +790,7 @@ git commit -m "feat(execution-job): resolve folder ids to Newman folder names an
 - Consumes: `CONTAINER_WORKDIR` (Task 4); Task 3 settings.
 - Produces: `build_docker_argv(*, settings: Settings, container_name: str, workspace_root: Path, folder_name: str | None, host_pins: dict[str, list[str]], container_user: str | None, timeout_seconds: int) -> list[str]`. Raises `ValueError` for an invalid container name, pin hostname, or pin address (defence in depth — argv elements are never shell-parsed, but a malformed value must never become a Docker option).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/unit/test_newman_command.py
@@ -890,12 +890,12 @@ def test_container_user_is_applied_when_given():
     assert "--user" not in _argv(container_user=None)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_newman_command.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.newman_command'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # backend/app/services/newman_command.py
@@ -992,12 +992,12 @@ def build_docker_argv(
 
 (If the `--add-host` expected order in the test differs from `sorted()` of the address strings, the test is authoritative only about: hosts sorted, every address present, one flag per address — adjust the expected list to the `sorted()` order rather than changing the implementation.)
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_newman_command.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/newman_command.py backend/tests/unit/test_newman_command.py
@@ -1015,7 +1015,7 @@ git commit -m "feat(newman): build hardened docker run argument arrays with pinn
 **Interfaces:**
 - Produces: `read_generated_report(path: Path, *, max_bytes: int) -> RunOutcome` — success with the exact file bytes, or a failed outcome with one of the stable codes `missing_report`, `report_too_large`, `malformed_report` and a fixed user-safe detail. The size is checked with `stat` BEFORE reading.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/unit/test_newman_report_adapter.py
@@ -1077,12 +1077,12 @@ def test_error_details_are_fixed_messages(tmp_path):
     assert "abc123" not in (outcome.error_detail or "")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_newman_report_adapter.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.newman_report_adapter'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # backend/app/services/newman_report_adapter.py
@@ -1127,12 +1127,12 @@ def read_generated_report(path: Path, *, max_bytes: int) -> RunOutcome:
     return RunOutcome(success=True, report_bytes=data)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_newman_report_adapter.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/newman_report_adapter.py backend/tests/unit/test_newman_report_adapter.py
@@ -1153,7 +1153,7 @@ git commit -m "feat(newman): add generated-report adapter with size and structur
 
 Exit-code mapping (after the process exits on its own): `0` or `1` → read the report (1 = assertions failed, still a complete run); `125` → `runner_unavailable`; `137` → `resource_limit`; anything else → `process_failed`. Process stdout/stderr go to `DEVNULL` — they may echo request data or secrets and are never needed.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/unit/test_docker_newman_runner.py
@@ -1372,12 +1372,12 @@ def test_error_details_are_fixed_and_contain_no_values(tmp_path):
         assert "s3cret-value" not in outcome.error_detail
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_docker_newman_runner.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.docker_newman_runner'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # backend/app/services/docker_newman_runner.py
@@ -1540,12 +1540,12 @@ class DockerNewmanRunner(NewmanRunner):
             log.warning("docker kill failed", extra={"stage": "newman_run"})
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_docker_newman_runner.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/docker_newman_runner.py backend/tests/unit/test_docker_newman_runner.py
@@ -1564,7 +1564,7 @@ git commit -m "feat(newman): add isolated DockerNewmanRunner with timeout and ca
 **Interfaces:**
 - Produces: `get_newman_runner` returns a `DockerNewmanRunner(settings)` when `settings.newman_runner == "docker"` and `shutil.which(settings.docker_binary)` finds the Docker CLI; `None` (→ the endpoint's existing 503 `runner_unavailable`) when it does not.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/unit/test_newman_runner_dependency.py
@@ -1589,12 +1589,12 @@ def test_fake_and_disabled_modes_are_unchanged():
     assert deps.get_newman_runner(Settings(newman_runner="disabled")) is None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_newman_runner_dependency.py -v`
 Expected: FAIL — `AttributeError: module 'app.api.deps' has no attribute 'shutil'` (or a docker-mode assertion failure).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `backend/app/api/deps.py` add `import shutil` and `from ..services.docker_newman_runner import DockerNewmanRunner`, and change `get_newman_runner`:
 
@@ -1639,12 +1639,12 @@ fails the job.
 Real-Docker tests are opt-in: `B11_RUN_DOCKER_TESTS=1 ./.venv/Scripts/python.exe -m pytest -m docker`.
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_newman_runner_dependency.py tests/integration/test_execution_jobs_lifecycle.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/api/deps.py backend/tests/unit/test_newman_runner_dependency.py README.md
@@ -1667,7 +1667,7 @@ git commit -m "feat(api): select the Docker Newman runner via B11_NEWMAN_RUNNER=
 **Interfaces:**
 - Produces: `JobDispatcher` Protocol with `submit(fn: Callable[..., None], /, *args, **kwargs) -> None`; `ThreadPoolJobDispatcher(max_workers: int)` with `submit` and `shutdown(wait: bool = False)`; `InlineJobDispatcher` (runs synchronously — for tests); `get_job_dispatcher() -> JobDispatcher` (lru_cache singleton using `Settings.max_concurrent_executions`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # backend/tests/unit/test_job_dispatcher.py
@@ -1764,12 +1764,12 @@ def test_create_returns_queued_and_hands_the_run_to_the_dispatcher():
 
 (Use the file's existing `_collection()` helper and imports; if the file's other tests build the app through a fixture, follow the same pattern.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_job_dispatcher.py tests/integration/test_execution_jobs_lifecycle.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.job_dispatcher'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # backend/app/services/job_dispatcher.py
@@ -1889,12 +1889,12 @@ The resulting body after the supplied-values coercion reads:
 
 If `backend/app/main.py` defines a lifespan/shutdown hook, add `get_job_dispatcher().shutdown(wait=False)` to it; if it has none, do not add one in this task.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/unit/test_job_dispatcher.py tests/integration/test_execution_jobs_lifecycle.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/job_dispatcher.py backend/app/api/deps.py backend/app/api/v1/execution_jobs.py backend/tests/unit/test_job_dispatcher.py backend/tests/integration/test_execution_jobs_lifecycle.py
@@ -1915,7 +1915,7 @@ git commit -m "feat(execution-job): run jobs on a bounded dispatcher instead of 
 **Interfaces:**
 - Consumes: everything above; `get_newman_runner`, `get_job_dispatcher` overrides; `InlineJobDispatcher`.
 
-- [ ] **Step 1: Register the marker**
+- [x] **Step 1: Register the marker**
 
 In `backend/pyproject.toml`, add to the `markers` list:
 
@@ -1923,7 +1923,7 @@ In `backend/pyproject.toml`, add to the `markers` list:
     "docker: tests that start real Newman containers (opt-in: B11_RUN_DOCKER_TESTS=1)",
 ```
 
-- [ ] **Step 2: Add the fixture collection**
+- [x] **Step 2: Add the fixture collection**
 
 `backend/tests/fixtures/newman/echo_collection.json` — a producer/consumer flow against the public Postman Echo service. Request 1 returns a per-run random value; its test script stores it; request 2 sends it back in a header — the correlation the analysis must find. Request 3 proves DNS pinning: its pre-request script tries to reach a hostname that was never validated, and records whether that lookup failed.
 
@@ -1991,7 +1991,7 @@ In `backend/pyproject.toml`, add to the `markers` list:
 }
 ```
 
-- [ ] **Step 3: Write the opt-in tests**
+- [x] **Step 3: Write the opt-in tests**
 
 ```python
 # backend/tests/integration/test_docker_newman_runner.py
@@ -2106,7 +2106,7 @@ def test_full_job_reaches_ready_with_a_correlation_candidate():
     assert analysis["candidate_count"] >= 1
 ```
 
-- [ ] **Step 4: Verify the default suite skips them and everything else passes**
+- [x] **Step 4: Verify the default suite skips them and everything else passes**
 
 Run: `./.venv/Scripts/python.exe -m pytest -q`
 Expected: PASS, with `test_docker_newman_runner.py` reported as skipped.
@@ -2116,7 +2116,7 @@ Expected: both clean.
 
 If Docker is available on this machine: build the image (`docker build -t baseline11/newman:6.2.2 docker/newman` from the repo root), then run `B11_RUN_DOCKER_TESTS=1 ./.venv/Scripts/python.exe -m pytest -m docker -v` and record the result. If Docker is not available, record in the report that the opt-in tests were not executed and why — never claim they passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/pyproject.toml backend/tests/fixtures/newman/echo_collection.json backend/tests/integration/test_docker_newman_runner.py

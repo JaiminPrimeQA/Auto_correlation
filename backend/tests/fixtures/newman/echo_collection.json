@@ -1,0 +1,61 @@
+{
+  "info": {
+    "name": "Baseline11 Docker contract",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.environment.set('session_token', pm.response.json().args.session);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://postman-echo.com/get?session={{$guid}}"
+      }
+    },
+    {
+      "name": "Use session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('status is 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-Session", "value": "{{session_token}}" }],
+        "url": "https://postman-echo.com/headers"
+      }
+    },
+    {
+      "name": "DNS probe",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest('https://example.org/', function (err) {",
+              "  pm.environment.set('dns_probe', err ? 'blocked' : 'reachable');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": { "method": "GET", "url": "https://postman-echo.com/get?probe=1" }
+    }
+  ]
+}

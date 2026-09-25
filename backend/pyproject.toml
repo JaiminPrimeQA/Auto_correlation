@@ -20,6 +20,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "slow: tests that launch a real JMeter run (deselect with -m 'not slow')",
+    "docker: tests that start real Newman containers (opt-in: B11_RUN_DOCKER_TESTS=1)",
 ]
 
 [tool.mypy]
