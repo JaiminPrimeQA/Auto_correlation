@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -41,6 +42,30 @@ def aws_mocks() -> Iterator[None]:
         yield
 
 
+class AtomicCalls:
+    """Serialise every call on a moto client.
+
+    Real DynamoDB applies each request (condition check + write) atomically;
+    in-process moto does not, so concurrent threads could both pass the same
+    `version = :v` check. Threads still interleave *between* calls, so
+    optimistic-locking retries are exercised as in production."""
+
+    def __init__(self, client) -> None:
+        self._client = client
+        self._lock = threading.Lock()
+
+    def __getattr__(self, name: str):
+        attr = getattr(self._client, name)
+        if not callable(attr):
+            return attr
+
+        def call(*args, **kwargs):
+            with self._lock:
+                return attr(*args, **kwargs)
+
+        return call
+
+
 @contextmanager
 def dynamodb_job_store(ttl_seconds: int = 60) -> Iterator:
     from app.repositories.dynamodb_job_store import DynamoDbExecutionJobStore
@@ -48,4 +73,4 @@ def dynamodb_job_store(ttl_seconds: int = 60) -> Iterator:
     with aws_mocks():
         client = boto3.client("dynamodb", region_name=REGION)
         create_jobs_table(client)
-        yield DynamoDbExecutionJobStore(client=client, table_name=TABLE, ttl_seconds=ttl_seconds)
+        yield DynamoDbExecutionJobStore(client=AtomicCalls(client), table_name=TABLE, ttl_seconds=ttl_seconds)
