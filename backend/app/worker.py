@@ -1,7 +1,7 @@
 """Execution worker for the AWS backend (spec §5.2).
 
     python -m app.worker           # keep processing jobs
-    python -m app.worker --once    # process at most one job, then exit
+    python -m app.worker --once    # wait for one job, process it, then exit
 
 In ECS each worker task processes one job and exits (`--once`), so every job
 starts in a fresh task; the service's desired count scales with queue depth.
@@ -156,6 +156,13 @@ def build_worker(settings: Settings) -> Worker:
     )
 
 
+def run_once(worker: Worker) -> None:
+    """Wait (long-polling) until one job arrives, process it, and return. In
+    ECS the task then exits, so every job gets a fresh worker task."""
+    while not worker.process_one():
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Baseline11 execution worker")
     parser.add_argument("--once", action="store_true", help="process at most one job, then exit")
@@ -166,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     worker = build_worker(settings)
     log.info("worker started", extra={"stage": "worker"})
     if args.once:
-        worker.process_one()
+        run_once(worker)
         return 0
     while True:
         worker.process_one()

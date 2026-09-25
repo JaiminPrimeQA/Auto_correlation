@@ -17,7 +17,8 @@ def test_emits_cloudwatch_embedded_metric_format(lines):
     doc = json.loads(lines[0])
     directive = doc["_aws"]["CloudWatchMetrics"][0]
     assert directive["Namespace"] == "Baseline11/Execution"
-    assert directive["Dimensions"] == [["outcome", "error_code"]]
+    # The full set plus a roll-up by the first dimension (alarms use outcome alone).
+    assert directive["Dimensions"] == [["outcome", "error_code"], ["outcome"]]
     assert directive["Metrics"] == [{"Name": "JobsCompleted", "Unit": "Count"}]
     assert (doc["outcome"], doc["error_code"], doc["JobsCompleted"]) == ("failed", "timeout", 1)
     assert isinstance(doc["_aws"]["Timestamp"], int)

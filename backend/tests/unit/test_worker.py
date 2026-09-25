@@ -135,3 +135,20 @@ def test_cancelled_before_pickup_is_not_run(env):
     assert runner.calls == []
     assert env["store"].get("job_1").state == ExecutionJobState.CANCELLED
     assert _keys(env) == []
+
+
+def test_run_once_waits_through_empty_polls_then_exits_after_one_job(env):
+    from app.worker import run_once
+
+    class _Worker:
+        def __init__(self):
+            self.results = [False, False, True, True]
+            self.calls = 0
+
+        def process_one(self):
+            self.calls += 1
+            return self.results.pop(0)
+
+    worker = _Worker()
+    run_once(worker)
+    assert worker.calls == 3

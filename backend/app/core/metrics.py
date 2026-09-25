@@ -24,6 +24,14 @@ def _write(line: str) -> None:
     sys.stdout.flush()
 
 
+def _dimension_sets(names: list[str]) -> list[list[str]]:
+    """The full dimension set plus a roll-up by the first dimension, so an
+    alarm can watch e.g. all failed jobs regardless of error code."""
+    if not names:
+        return [[]]
+    return [names, names[:1]] if len(names) > 1 else [names]
+
+
 def emit(name: str, value: float, *, unit: str, **dimensions: str | None) -> None:
     if unit not in _UNITS:
         raise ValueError(f"Unsupported metric unit {unit!r}.")
@@ -33,7 +41,7 @@ def emit(name: str, value: float, *, unit: str, **dimensions: str | None) -> Non
             "Timestamp": int(time.time() * 1000),
             "CloudWatchMetrics": [{
                 "Namespace": NAMESPACE,
-                "Dimensions": [list(dims)] if dims else [[]],
+                "Dimensions": _dimension_sets(list(dims)),
                 "Metrics": [{"Name": name, "Unit": unit}],
             }],
         },
