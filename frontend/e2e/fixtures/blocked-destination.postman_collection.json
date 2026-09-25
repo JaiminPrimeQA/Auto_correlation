@@ -1,0 +1,12 @@
+{
+  "info": {
+    "name": "E2E Blocked Destination",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Internal admin",
+      "request": { "method": "GET", "url": "https://{{internal_host}}/admin" }
+    }
+  ]
+}
