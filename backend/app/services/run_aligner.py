@@ -1,6 +1,6 @@
 """Align executions across two runs by a stable signature (not array index).
 
-Dynamic-looking path segments (UUIDs, long tokens, long numeric ids) are
+Dynamic-looking path segments (UUIDs, long tokens, numeric ids of any length) are
 normalised for the signature only; originals are retained for correlation. A
 per-signature occurrence ordinal disambiguates repeated identical requests.
 """
@@ -13,14 +13,16 @@ from ..domain.models import AlignmentPair, AlignmentReport, NormalizedExecution,
 
 _UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _LONG_HEX = re.compile(r"^[0-9a-fA-F]{16,}$")
-_LONG_NUM = re.compile(r"^\d{5,}$")
+# Any all-digit segment: small ids (/booking/2361) change per run just like long
+# ones. The request name and occurrence ordinal keep distinct requests apart.
+_NUM = re.compile(r"^\d+$")
 _LONG_TOKEN = re.compile(r"^[A-Za-z0-9_-]{20,}$")
 
 
 def _normalize_segment(seg: str) -> str:
     if _UUID.match(seg) or _LONG_HEX.match(seg) or _LONG_TOKEN.match(seg):
         return "{dyn}"
-    if _LONG_NUM.match(seg):
+    if _NUM.match(seg):
         return "{id}"
     # Prefixed identifiers such as "rec_11112222" or "order-9f8": alphanumeric
     # tokens of reasonable length carrying several digits are treated as dynamic.

@@ -19,6 +19,7 @@ from ..domain.enums import BodyMode, ExtractorMethod, LocationType, RuleState  #
 from ..domain.models import (
     CorrelationRule,
     NormalizedExecution,
+    NormalizedRequest,
     NormalizedRun,
     Pair,
     ValueOccurrence,
@@ -32,6 +33,42 @@ from .run_aligner import align_runs
 
 # See header_policy: shared with everything that proposes correlation targets.
 _EXCLUDED_HEADERS = set(NON_REPLAYED_HEADERS)
+
+
+def _set_cookie_names(execution: NormalizedExecution) -> set[str]:
+    """Cookie names a response set; the Cookie Manager replays these itself."""
+    if execution.response is None:
+        return set()
+    names = {c.name for c in execution.response.cookies}
+    for h in execution.response.headers:
+        if h.name.lower() == "set-cookie":
+            name = h.value.split(";", 1)[0].partition("=")[0].strip()
+            if name:
+                names.add(name)
+    return names
+
+
+def _groovy_str(text: str) -> str:
+    return "'" + text.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def _groovy_value(value: str) -> str:
+    """'a${token}b' -> 'a' + vars.get('token') + 'b' (no ${} inside cached scripts)."""
+    parts: list[str] = []
+    pos = 0
+    for m in re.finditer(r"\$\{(\w+)\}", value):
+        if m.start() > pos:
+            parts.append(_groovy_str(value[pos:m.start()]))
+        parts.append(f"vars.get({_groovy_str(m.group(1))})")
+        pos = m.end()
+    if pos < len(value) or not parts:
+        parts.append(_groovy_str(value[pos:]))
+    return " + ".join(parts)
+
+
+def _client_cookies(request: NormalizedRequest, server_cookies: set[str]) -> list[Pair]:
+    """Request cookies the client set itself (not replayed by the Cookie Manager)."""
+    return [c for c in request.cookies if c.name not in server_cookies]
 
 
 @dataclass
@@ -183,9 +220,10 @@ class JmxBuilder:
 
         # Samplers (in sequence order).
         sampler_elements: list[tuple[NormalizedExecution, ET.Element, ET.Element]] = []
+        server_cookies: set[str] = set()  # names set via Set-Cookie so far: the Cookie Manager replays them
         for execution in sequence_run.executions:
             sub = consumers.get(execution.id, [])
-            mutated, replaced, props, materialized = self._mutate_request(execution, sub)
+            mutated, replaced, props, materialized = self._mutate_request(execution, sub, server_cookies)
             result.replaced_consumers += replaced
             for prop in props:
                 if prop not in result.required_properties:
@@ -209,6 +247,8 @@ class JmxBuilder:
             tg_tree.append(sampler)
             child_tree = ET.SubElement(tg_tree, "hashTree")
             self._header_manager(child_tree, mutated.headers)
+            self._client_cookie_preprocessor(child_tree, _client_cookies(mutated, server_cookies))
+            server_cookies |= _set_cookie_names(execution)
 
             for rule in producers.get(execution.id, []):
                 self._extractor(child_tree, rule)
@@ -374,6 +414,35 @@ class JmxBuilder:
 
     # --- header manager ---
 
+    def _client_cookie_preprocessor(self, parent: ET.Element, cookies: list[Pair]) -> None:
+        """Send cookies the client set itself (e.g. `Cookie: token=...`).
+
+        A Cookie header in a Header Manager is overwritten by JMeter's Cookie
+        Manager whenever the server has set cookies too, so the cookies are
+        added to the Cookie Manager right before the request instead."""
+        if not cookies:
+            return
+        entries = ", ".join(f"[{_groovy_str(c.name)}, {_groovy_value(c.value)}]" for c in cookies)
+        script = (
+            "// Cookies this request sets itself (not received via Set-Cookie).\n"
+            "import org.apache.jmeter.protocol.http.control.Cookie\n"
+            "def cm = sampler.getCookieManager()\n"
+            "if (cm == null) { log.warn('No HTTP Cookie Manager: client cookies not sent'); return }\n"
+            "def secure = sampler.getProtocol() == 'https'\n"
+            f"[{entries}].each {{ c -> cm.add(new Cookie(c[0], c[1] ?: '', sampler.getDomain(), '/', secure, 0)) }}\n"
+        )
+        names = ", ".join(c.name for c in cookies)
+        e = ET.SubElement(parent, "JSR223PreProcessor", {
+            "guiclass": "TestBeanGUI", "testclass": "JSR223PreProcessor",
+            "testname": f"Set client cookies ({names})", "enabled": "true",
+        })
+        _sp(e, "scriptLanguage", "groovy")
+        _sp(e, "parameters", "")
+        _sp(e, "filename", "")
+        _sp(e, "cacheKey", "true")
+        _sp(e, "script", script)
+        ET.SubElement(parent, "hashTree")
+
     def _header_manager(self, parent: ET.Element, headers: list[Pair]) -> None:
         excluded = _EXCLUDED_HEADERS if self.options.keep_user_agent else _EXCLUDED_HEADERS | {"user-agent"}
         keep = [h for h in headers if h.name.lower() not in excluded]
@@ -493,7 +562,10 @@ class JmxBuilder:
     # --- request mutation (consumer substitution + secret externalisation) ---
 
     def _mutate_request(
-        self, execution: NormalizedExecution, subs: list[tuple[CorrelationRule, ValueOccurrence]]
+        self,
+        execution: NormalizedExecution,
+        subs: list[tuple[CorrelationRule, ValueOccurrence]],
+        server_cookies: set[str] | None = None,
     ):
         req = copy.deepcopy(execution.request)
         replaced = 0
@@ -590,6 +662,10 @@ class JmxBuilder:
                     or ((con.key or con.canonical_path).lower() == "user-agent" and not self.options.keep_user_agent)
                 ):
                     values = []
+            elif con.location_type == LocationType.COOKIE:
+                # Only a client-set cookie is emitted (as a Cookie header).
+                values = [c.value for c in _client_cookies(req, server_cookies or set())
+                          if c.name == (con.key or con.canonical_path)]
             elif con.location_type == LocationType.TEXT_BODY and token in (req.raw_body or ""):
                 values = [expected]
             if expected in values:

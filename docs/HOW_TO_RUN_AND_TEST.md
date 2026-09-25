@@ -142,20 +142,41 @@ Then, in the **Generate** tab, click **Validate with JMeter**.
 **Expected:** a report shows every sampler, its success/failure, and which variables were
 extracted. If everything passes the badge changes to **✓ Validated JMX**.
 
-### Test D — Run a Postman collection twice (needs Docker)
+### Test D — Run a Postman collection twice (needs Docker + internet)
+
+Use the ready-made **booking flow** in `samples/`. It calls the public practice API
+Restful-Booker (`https://restful-booker.herokuapp.com`) and books, updates and deletes a
+hotel booking.
+
+| File | What it is |
+|------|------------|
+| `samples/booking-flow.postman_collection.json` | 7 requests: Login → Create booking → Get → Update (PUT) → Partial update (PATCH) → Search → Delete |
+| `samples/booking-flow.postman_environment.json` | `baseUrl`, `username` = `admin`, `password` = `password123` (public demo login, marked secret), guest first/last name |
 
 1. Go back to the start page and choose **Run a Postman collection**.
-2. **Collection file:** `frontend/e2e/fixtures/checkout-demo.postman_collection.json`
-   **Environment file:** `frontend/e2e/fixtures/checkout-demo.postman_environment.json`
-   (this collection calls the public test service `postman-echo.com`, so you need internet).
-3. **Variables step:** the tool lists values it could not find. Type any text for `api_key`
-   (it is treated as a secret: hidden input, never logged, never written into the JMX).
-4. **Scope and review:** keep the whole collection, check the target domain list, then click
-   **Run collection twice**.
+2. Pick the collection file and the environment file above.
+3. **Variables step:** nothing is missing. `password` shows as a hidden (secret) value, and
+   `token` / `bookingid` show as *set by a script* — they are created during the run.
+4. **Scope and review:** keep the whole collection; the only target domain is
+   `restful-booker.herokuapp.com`. Click **Run collection twice**.
 
-**Expected:** a progress page walks through *validating → running baseline → running
-comparison → analysing → ready* (usually well under a minute). It then opens the normal
-**Run health** page, and you can continue with Tests B/C as before.
+**Expected, step by step**
+
+| Where | You should see |
+|-------|----------------|
+| Progress page | validating → running baseline → running comparison → analysing → ready (about 30–60 s) |
+| Run health | Both runs 7/7 successful, alignment 100 %, readiness **Ready** |
+| Candidates | `token` (from Login, used in the `Cookie` of PUT/PATCH/DELETE) and `bookingid` (from Create booking, used in the URL of Get/PUT/PATCH/Delete) |
+| Auto-correlate | Creates `token`, `bookingid` and three echoed values (`firstname`, `lastname`, `checkin`) |
+| Generate | *Generated JMX*; PUT/PATCH/Delete carry a **Set client cookies (token)** step |
+| Validate with JMeter | **✓ Validated JMX** — 7/7 samplers pass (Delete answers 201; that is normal for this API) |
+
+Why this is a good test: the login token and the booking id are **different on every run**,
+so a plan that replays the recorded values fails, and only a correctly correlated plan passes.
+
+**Alternative:** `frontend/e2e/fixtures/checkout-demo.postman_collection.json` with
+`checkout-demo.postman_environment.json` (calls `postman-echo.com`; type any text for the
+secret `api_key`).
 
 ### Test E — Things that must be blocked (safety checks)
 
@@ -164,7 +185,7 @@ comparison → analysing → ready* (usually well under a minute). It then opens
 | Run `frontend/e2e/fixtures/blocked-destination.postman_collection.json` and enter `10.0.0.5` for `internal_host` | The run is refused because the target is a private address. Private/internal addresses are never called. |
 | In Test D, leave a required variable empty | You cannot start the run until it is filled in. |
 | Click **Run collection twice** several times quickly | Only **one** job starts. |
-| After Test D, search the backend terminal and the downloaded JMX for your `api_key` text | It does not appear anywhere. |
+| Run the `checkout-demo` alternative, then search the backend terminal and the downloaded JMX for the `api_key` text you typed | It does not appear anywhere. |
 | Upload two runs where every request failed (e.g. all 401) | Run health says *not ready*; the tool does not claim a successful correlation. |
 
 ---

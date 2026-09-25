@@ -40,3 +40,18 @@ def test_dynamic_path_segment_normalized_for_alignment():
     ]))
     r = align_runs(a, b)
     assert r.matched == 1  # long numeric id normalised to {id}
+
+
+def test_short_numeric_path_id_normalized_for_alignment():
+    # Restful-Booker style: a new 4-digit booking id per run in the URL path.
+    a = _norm(report("C", [
+        execution("Get booking", "GET", "https://x.com/booking/2361", resp_body={"ok": 1}),
+        execution("Delete booking", "DELETE", "https://x.com/booking/2361", resp_body={"ok": 1}),
+    ]))
+    b = _norm(report("C", [
+        execution("Get booking", "GET", "https://x.com/booking/2362", resp_body={"ok": 1}),
+        execution("Delete booking", "DELETE", "https://x.com/booking/2362", resp_body={"ok": 1}),
+    ]))
+    r = align_runs(a, b)
+    assert r.matched == 2
+    assert r.coverage == 1.0
