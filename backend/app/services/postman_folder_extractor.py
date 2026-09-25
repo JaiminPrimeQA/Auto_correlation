@@ -50,3 +50,16 @@ def _walk(items: list, path: str, seen: set[str]) -> list[PostmanFolder]:
 
 def extract_folders(collection_data: dict) -> list[PostmanFolder]:
     return _walk(collection_data.get("item", []), "", set())
+
+
+class AmbiguousFolderError(ValueError):
+    """Newman selects folders by name; this folder's name is not unique."""
+
+
+def folder_run_name(collection_data: dict, folder_id: str) -> str:
+    folders = extract_folders(collection_data)
+    by_id = {f.id: f for f in folders}
+    folder = by_id[folder_id]  # KeyError for an unknown id
+    if sum(1 for f in folders if f.name == folder.name) > 1:
+        raise AmbiguousFolderError(folder.name)
+    return folder.name

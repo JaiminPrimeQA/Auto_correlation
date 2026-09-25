@@ -1,5 +1,7 @@
 # backend/tests/unit/test_postman_folder_extractor.py
-from app.services.postman_folder_extractor import count_requests, extract_folders
+import pytest
+
+from app.services.postman_folder_extractor import AmbiguousFolderError, count_requests, extract_folders, folder_run_name
 from tests.fixtures.postman_builders import pm_collection, pm_folder, pm_request
 
 
@@ -53,3 +55,24 @@ def test_slug_collision_is_disambiguated():
     ids = [f.id for f in folders]
     assert len(ids) == len(set(ids))
     assert "a-b" in ids
+
+
+def test_folder_run_name_returns_the_folder_name():
+    collection = pm_collection("C", [pm_folder("Auth", [pm_request("Login", "POST", "https://a.example.com/")])])
+    folder_id = extract_folders(collection)[0].id
+    assert folder_run_name(collection, folder_id) == "Auth"
+
+
+def test_folder_run_name_rejects_duplicate_names_anywhere_in_the_tree():
+    collection = pm_collection("C", [
+        pm_folder("Auth", [pm_request("A", "GET", "https://a.example.com/")]),
+        pm_folder("Other", [pm_folder("Auth", [pm_request("B", "GET", "https://a.example.com/")])]),
+    ])
+    folder_id = extract_folders(collection)[0].id
+    with pytest.raises(AmbiguousFolderError):
+        folder_run_name(collection, folder_id)
+
+
+def test_folder_run_name_unknown_id():
+    with pytest.raises(KeyError):
+        folder_run_name(pm_collection("C", []), "nope")

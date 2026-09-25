@@ -225,3 +225,19 @@ def test_variable_set_by_a_producer_script_does_not_block_creation():
     )
     assert created is True
     assert job.state == ExecutionJobState.QUEUED
+
+
+def test_ambiguously_named_folder_is_rejected_at_creation():
+    collection = pm_collection("C", [
+        pm_folder("Auth", [pm_request("A", "GET", "https://93.184.216.34/a")]),
+        pm_folder("Other", [pm_folder("Auth", [pm_request("B", "GET", "https://93.184.216.34/b")])]),
+    ])
+    folder_id = extract_folders(collection)[0].id
+    with pytest.raises(ProblemException) as exc:
+        create_job(
+            collection_raw=json.dumps(collection).encode(), collection_filename="c.json",
+            environment_raw=None, environment_filename=None, folder_id=folder_id, supplied_values={},
+            owner_key="127.0.0.1", idempotency_key=None, store=_store(), settings=Settings(),
+        )
+    assert exc.value.status == 422
+    assert "Auth" in exc.value.detail

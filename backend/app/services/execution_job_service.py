@@ -22,7 +22,7 @@ from ..domain.execution_job import ExecutionJob, ExecutionJobState, NewmanRunner
 from ..repositories.analysis_store import SessionStore
 from ..repositories.execution_job_store import ExecutionJobStore, too_many_active_jobs
 from . import analysis_service, destination_policy, postman_domain_extractor
-from .postman_folder_extractor import extract_folders
+from .postman_folder_extractor import AmbiguousFolderError, extract_folders, folder_run_name
 from .postman_parser import parse_collection, parse_environment
 from .postman_script_variables import script_set_variable_names
 from .postman_variable_extractor import extract_variable_references
@@ -79,6 +79,14 @@ def create_job(
                 f"Unknown folder '{folder_id}'.",
                 errors=[{"path": "$.folder_id", "detail": f"Unknown folder '{folder_id}'."}],
             )
+        try:
+            folder_run_name(collection_data, folder_id)
+        except AmbiguousFolderError as exc:
+            detail = (
+                f"Folder '{exc}' is not uniquely named; Newman selects folders by name. "
+                "Rename one of the folders to run it on its own."
+            )
+            raise validation_error(detail, errors=[{"path": "$.folder_id", "detail": detail}]) from exc
 
     environment_values: dict[str, str] = {}
     if environment_raw is not None:
