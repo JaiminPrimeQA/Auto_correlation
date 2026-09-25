@@ -4,6 +4,8 @@ Transform two Newman JSON run reports of the same API journey into a **correlati
 
 The app reconstructs the executed HTTP workflow, detects dynamic values passed from earlier responses into later requests, lets you review/edit/add correlation rules through a request/response explorer, and generates a valid, directly usable `.jmx` with real post-processors (JSON/XPath2/Regex/Boundary extractors) on producer samplers and `${variable}` references on every approved consumer.
 
+
+> **New here?** Start with [docs/HOW_TO_RUN_AND_TEST.md](docs/HOW_TO_RUN_AND_TEST.md) — setup, starting the app and step-by-step test scenarios.
 ---
 
 ## Why two successful runs?
