@@ -3,35 +3,26 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { AuthGate } from "@/components/AuthGate";
+import { NO_FLASH_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "Baseline11 Auto-Correlate",
-  description: "Turn Newman JSON reports into auto-correlated JMeter test plans.",
+  description: "Run a Postman collection twice and get a correlated JMeter test plan.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body className="min-h-screen antialiased">
-        <header className="border-b border-edge bg-panel/60 backdrop-blur">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold text-brand">Baseline11</span>
-              <span className="text-sm text-slate-400">Auto-Correlate</span>
-            </div>
-            <a
-              className="text-xs text-slate-400 hover:text-slate-200"
-              href="https://jmeter.apache.org/usermanual/component_reference.html"
-              target="_blank"
-              rel="noreferrer"
-            >
-              JMeter 5.6.3 reference
-            </a>
-          </div>
-        </header>
-        <main className="mx-auto max-w-7xl px-4 py-6">
-          <AuthGate>{children}</AuthGate>
-        </main>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_SCRIPT }} />
+      </head>
+      <body className="min-h-[100dvh] antialiased">
+        <AuthGate>{children}</AuthGate>
+        <footer className="mx-auto max-w-6xl px-4 pb-8 pt-4 text-xs text-fg-subtle sm:px-6">
+          <a className="hover:text-fg" href="https://jmeter.apache.org/usermanual/component_reference.html" target="_blank" rel="noreferrer">
+            JMeter 5.6.3 reference
+          </a>
+        </footer>
       </body>
     </html>
   );

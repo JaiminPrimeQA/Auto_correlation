@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { api, type AnalysisSummary } from "@/lib/api";
+import { AppHeader } from "@/components/AppHeader";
 import { Uploader } from "@/components/Uploader";
 import { HealthPanel } from "@/components/HealthPanel";
 import { Explorer } from "@/components/Explorer";
@@ -69,21 +70,40 @@ export default function Page() {
 
   if (!summary) {
     if (mode === "collection") {
-      return <CollectionWizard onDone={openAnalysis} onBack={() => setMode(null)} />;
+      return (
+        <>
+          <AppHeader />
+          <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+            <CollectionWizard onDone={openAnalysis} onBack={() => setMode(null)} />
+          </main>
+        </>
+      );
     }
     if (mode === "reports") {
       return (
-        <div className="space-y-2">
-          <div className="mx-auto flex max-w-2xl justify-end">
-            <button className="btn-ghost text-xs" onClick={() => setMode(null)}>
-              Choose another mode
-            </button>
-          </div>
-          <Uploader onDone={openAnalysis} />
-        </div>
+        <>
+          <AppHeader />
+          <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+            <div className="space-y-2">
+              <div className="mx-auto flex max-w-2xl justify-end">
+                <button className="btn-ghost text-xs" onClick={() => setMode(null)}>
+                  Choose another mode
+                </button>
+              </div>
+              <Uploader onDone={openAnalysis} />
+            </div>
+          </main>
+        </>
       );
     }
-    return <ModeChooser onChoose={setMode} />;
+    return (
+      <>
+        <AppHeader />
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <ModeChooser onChoose={setMode} />
+        </main>
+      </>
+    );
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -97,6 +117,9 @@ export default function Page() {
   ];
 
   return (
+    <>
+      <AppHeader />
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -253,5 +276,7 @@ export default function Page() {
         </>
       )}
     </div>
+      </main>
+    </>
   );
 }
