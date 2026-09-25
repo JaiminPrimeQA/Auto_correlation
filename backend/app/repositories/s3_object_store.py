@@ -22,7 +22,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 _JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
-_STAGE = re.compile(r"^[a-z_]{1,32}$")
+_STAGE = re.compile(r"^[a-z0-9_]{1,32}$")
 
 
 class ObjectTooLarge(Exception):

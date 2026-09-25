@@ -28,7 +28,13 @@ def read_generated_report(path: Path, *, max_bytes: int) -> RunOutcome:
         return _failed("missing_report", "Newman did not produce a JSON report.")
     if size > max_bytes:
         return _failed("report_too_large", "The Newman report exceeded the maximum allowed size.")
-    data = path.read_bytes()
+    return validate_report_bytes(path.read_bytes())
+
+
+def validate_report_bytes(data: bytes) -> RunOutcome:
+    """Structural checks on report bytes already within the size limit."""
+    if not data:
+        return _failed("missing_report", "Newman did not produce a JSON report.")
     try:
         document = json.loads(data)
     except (ValueError, UnicodeDecodeError):

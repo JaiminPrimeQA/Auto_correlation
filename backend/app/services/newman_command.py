@@ -71,15 +71,25 @@ def build_docker_argv(
     if container_user:
         argv += ["--user", container_user]
     argv += _add_host_flags(host_pins)
-    argv += [
-        settings.newman_docker_image,
-        "run", f"{CONTAINER_WORKDIR}/collection.json",
-        "--environment", f"{CONTAINER_WORKDIR}/environment.json",
+    argv.append(settings.newman_docker_image)
+    argv += newman_run_args(
+        settings=settings, workdir=CONTAINER_WORKDIR, folder_name=folder_name, timeout_seconds=timeout_seconds,
+    )
+    return argv
+
+
+def newman_run_args(*, settings: Settings, workdir: str, folder_name: str | None, timeout_seconds: int) -> list[str]:
+    """The `newman ...` arguments shared by the Docker runner and the Fargate
+    runner task: fixed input/report paths under `workdir`, JSON reporter,
+    hard timeouts, no redirects, no file reads outside the working dir."""
+    args = [
+        "run", f"{workdir}/collection.json",
+        "--environment", f"{workdir}/environment.json",
         "--reporters", "json",
-        "--reporter-json-export", f"{CONTAINER_WORKDIR}/out/report.json",
+        "--reporter-json-export", f"{workdir}/out/report.json",
         "--timeout", str(timeout_seconds * 1000),
         "--timeout-request", str(settings.newman_request_timeout_ms),
-        "--working-dir", f"{CONTAINER_WORKDIR}/files",
+        "--working-dir", f"{workdir}/files",
         "--no-insecure-file-read",
         "--ignore-redirects",
         "--disable-unicode",
@@ -88,5 +98,5 @@ def build_docker_argv(
     if folder_name is not None:
         # One `--folder=<name>` element: a name starting with '-' can never be
         # read as a separate Newman option.
-        argv.append(f"--folder={folder_name}")
-    return argv
+        args.append(f"--folder={folder_name}")
+    return args

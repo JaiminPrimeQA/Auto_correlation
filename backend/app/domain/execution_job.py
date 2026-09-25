@@ -59,6 +59,8 @@ class RunInput:
     # Validated hostname -> addresses (from destination validation). The Docker
     # runner pins exactly these into the container's /etc/hosts.
     host_pins: dict[str, list[str]] = field(default_factory=dict)
+    # The job this run belongs to (the ECS runner scopes its S3 objects by it).
+    job_id: str = ""
 
 
 @dataclass
