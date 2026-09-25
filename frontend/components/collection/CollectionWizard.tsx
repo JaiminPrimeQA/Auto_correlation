@@ -25,8 +25,10 @@ function newAttemptKey(): string {
  * Run, then the existing analysis results. */
 export function CollectionWizard({
   onDone,
+  onJobCreated,
 }: {
   onDone: (summary: AnalysisSummary, jobId: string) => void;
+  onJobCreated?: (jobId: string) => void;
 }) {
   const [step, setStepState] = useState<Step>("files");
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -72,6 +74,7 @@ export function CollectionWizard({
       });
       clearSecrets();
       setJobId(job.job_id);
+      onJobCreated?.(job.job_id);
       setStep("progress");
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));

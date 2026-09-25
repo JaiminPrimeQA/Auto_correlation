@@ -122,6 +122,20 @@ describe("CollectionWizard", () => {
     expect(current()?.textContent).toBe("3Review");
   });
 
+  it("calls onJobCreated once the job exists, before it is ready", async () => {
+    m.createExecutionJob.mockResolvedValue(makeJob());
+    m.getExecutionJob.mockResolvedValue(makeJob({ state: "queued" }));
+    const onJobCreated = vi.fn();
+    render(<CollectionWizard onDone={() => {}} onJobCreated={onJobCreated} />);
+
+    await throughToReview();
+    fireEvent.click(screen.getByRole("radio", { name: /^auth/i }));
+    fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
+
+    await waitFor(() => expect(onJobCreated).toHaveBeenCalledWith("job_1"));
+    expect(onJobCreated).toHaveBeenCalledTimes(1);
+  });
+
   it("shows a four-step progress indicator and no mode switch", async () => {
     render(<CollectionWizard onDone={() => {}} />);
     const steps = screen.getAllByRole("listitem").filter((li) => li.dataset.state);

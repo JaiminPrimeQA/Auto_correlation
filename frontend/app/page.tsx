@@ -82,7 +82,7 @@ export default function Page() {
       <ToastProvider>
         <AppHeader right={<button className="btn-ghost" onClick={newAnalysis}>New analysis</button>} />
         <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-          <CollectionWizard key={wizardKey} onDone={(s, job) => openAnalysis(s, job)} />
+          <CollectionWizard key={wizardKey} onDone={(s, job) => openAnalysis(s, job)} onJobCreated={setJobId} />
         </main>
       </ToastProvider>
     );
