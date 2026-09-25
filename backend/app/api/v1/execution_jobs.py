@@ -16,20 +16,17 @@ from starlette.concurrency import run_in_threadpool
 from ...core.config import Settings, get_settings
 from ...core.errors import service_unavailable, validation_error
 from ...core.logging import get_logger
-from ...domain.execution_job import ExecutionJob, ExecutionJobState, NewmanRunner
-from ...repositories.analysis_store import SessionStore
+from ...domain.execution_job import ExecutionJob, ExecutionJobState
 from ...repositories.execution_job_store import ExecutionJobStore
 from ...schemas import presenters
 from ...services import execution_job_service
-from ...services.job_dispatcher import JobDispatcher
+from ...services.job_launcher import JobLauncher, RunMaterial
 from ...services.postman_inspector import inspect_collection
 from ..deps import (
     enforce_rate_limit,
-    get_job_dispatcher,
+    get_job_launcher,
     get_job_store,
-    get_newman_runner,
     get_owner_key,
-    get_store,
     require_owned_job,
 )
 
@@ -113,17 +110,15 @@ async def create_execution_job(
     confirm: bool = Form(...),
     settings: Settings = Depends(get_settings),
     job_store: ExecutionJobStore = Depends(get_job_store),
-    analysis_store: SessionStore = Depends(get_store),
     owner_key: str = Depends(get_owner_key),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
-    runner: NewmanRunner | None = Depends(get_newman_runner),
-    dispatcher: JobDispatcher = Depends(get_job_dispatcher),
+    launcher: JobLauncher | None = Depends(get_job_launcher),
     _: None = Depends(enforce_rate_limit),
 ) -> dict:
     # Spec §4: with no runner configured (the default) nothing may execute, so
     # refuse before any job state exists rather than queue a job that can
     # never run.
-    if runner is None:
+    if launcher is None:
         raise service_unavailable("runner_unavailable", "Collection execution is not enabled on this server.")
     if not confirm:
         raise validation_error("Execution requires explicit confirmation (confirm=true).")
@@ -171,22 +166,17 @@ async def create_execution_job(
     dto["status_url"] = f"{settings.api_prefix}/execution-jobs/{job.id}"
 
     # `created` is False on an idempotency-key hit that returns an existing
-    # job (possibly already past QUEUED, or even terminal) - dispatching then
+    # job (possibly already past QUEUED, or even terminal) - launching then
     # would start a second run of the same job.
     if created:
-        dispatcher.submit(
-            execution_job_service.run_job,
-            job.id,
+        material = RunMaterial(
             collection_data=collection_data,
             environment_data=environment_data,
             variable_values=variable_values,
             supplied_values=supplied_values,
             folder_id=folder_id,
-            runner=runner,
-            store=job_store,
-            analysis_store=analysis_store,
-            settings=settings,
         )
+        await run_in_threadpool(launcher.launch, job.id, material)
 
     log.info(
         "execution job created",

@@ -17,6 +17,7 @@ from ..repositories.execution_job_store import ExecutionJobStore, InMemoryExecut
 from ..services.docker_newman_runner import DockerNewmanRunner
 from ..services.fake_newman_runner import canned_fake_runner
 from ..services.job_dispatcher import JobDispatcher, ThreadPoolJobDispatcher
+from ..services.job_launcher import JobLauncher, LocalJobLauncher, QueueJobLauncher
 
 
 @lru_cache
@@ -104,7 +105,38 @@ def require_analysis(
 @lru_cache
 def get_job_store() -> ExecutionJobStore:
     settings = get_settings()
+    if settings.job_backend == "aws":
+        from ..core.aws import aws_client, require
+        from ..repositories.dynamodb_job_store import DynamoDbExecutionJobStore
+
+        require(settings, "aws_region", "jobs_table")
+        return DynamoDbExecutionJobStore(
+            client=aws_client("dynamodb", settings), table_name=str(settings.jobs_table),
+            ttl_seconds=settings.job_ttl_seconds,
+        )
     return InMemoryExecutionJobStore(ttl_seconds=settings.job_ttl_seconds)
+
+
+@lru_cache
+def get_object_store():  # -> S3ObjectStore (AWS backend only)
+    from ..core.aws import aws_client, require
+    from ..repositories.s3_object_store import S3ObjectStore
+
+    settings = get_settings()
+    require(settings, "aws_region", "material_bucket")
+    return S3ObjectStore(
+        client=aws_client("s3", settings), bucket=str(settings.material_bucket), kms_key_id=settings.kms_key_id,
+    )
+
+
+@lru_cache
+def get_job_queue():  # -> SqsJobQueue (AWS backend only)
+    from ..core.aws import aws_client, require
+    from ..services.job_queue import SqsJobQueue
+
+    settings = get_settings()
+    require(settings, "aws_region", "job_queue_url")
+    return SqsJobQueue(client=aws_client("sqs", settings), queue_url=str(settings.job_queue_url))
 
 
 def get_newman_runner(settings: Settings = Depends(get_settings)) -> NewmanRunner | None:
@@ -123,6 +155,25 @@ def get_newman_runner(settings: Settings = Depends(get_settings)) -> NewmanRunne
 @lru_cache
 def get_job_dispatcher() -> JobDispatcher:
     return ThreadPoolJobDispatcher(max_workers=get_settings().max_concurrent_executions)
+
+
+def get_job_launcher(
+    settings: Settings = Depends(get_settings),
+    job_store: ExecutionJobStore = Depends(get_job_store),
+    analysis_store: SessionStore = Depends(get_store),
+    runner: NewmanRunner | None = Depends(get_newman_runner),
+    dispatcher: JobDispatcher = Depends(get_job_dispatcher),
+) -> JobLauncher | None:
+    """How a created job starts, or None when execution is unavailable (the
+    endpoint then answers 503 before creating anything). In the AWS backend
+    the API only enqueues; the worker process owns the Newman runner."""
+    if settings.job_backend == "aws":
+        return QueueJobLauncher(objects=get_object_store(), queue=get_job_queue(), job_store=job_store)
+    if runner is None:
+        return None
+    return LocalJobLauncher(
+        runner=runner, dispatcher=dispatcher, job_store=job_store, analysis_store=analysis_store, settings=settings,
+    )
 
 
 def require_owned_job(

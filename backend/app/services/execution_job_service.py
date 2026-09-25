@@ -474,3 +474,9 @@ def _drive_job(
     analysis.owner_key = job.owner_key
     analysis_store.create(analysis)
     _write_state(job_id, store, ExecutionJobState.READY, analysis_id=analysis.id)
+
+
+def fail_job(job_id: str, store: ExecutionJobStore, error_code: str, error_detail: str) -> bool:
+    """Mark an active job FAILED with a fixed, user-safe message (used by
+    launchers and the worker outside `run_job`). Returns whether it was written."""
+    return _write_state(job_id, store, ExecutionJobState.FAILED, error_code=error_code, error_detail=error_detail)
