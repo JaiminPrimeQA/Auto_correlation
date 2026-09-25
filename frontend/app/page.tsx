@@ -103,7 +103,7 @@ function Results({
               ]}
               tip="Cookies like __cf_bm are Cloudflare/session cookies that JMeter's Cookie Manager already handles, so you can safely Reject them."
             />
-            <div className="rounded-xl border border-accent/30 bg-accent-soft/40 p-4">
+            <div className="rounded-[10px] border border-accent/30 bg-accent-soft/40 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold">

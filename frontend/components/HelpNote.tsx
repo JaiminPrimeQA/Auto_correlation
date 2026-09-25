@@ -20,7 +20,7 @@ export function HelpNote({
         <QuestionIcon size={14} aria-hidden />
         What is this page? <span className="font-normal text-fg-subtle">{title}</span>
       </summary>
-      <div className="card mt-2 p-4">
+      <div className="mt-2 rounded-[10px] border border-line bg-surface2 p-4">
         <ol className="list-decimal space-y-1 pl-5 text-fg-muted">
           {steps.map((s, i) => (
             <li key={i}>{s}</li>
