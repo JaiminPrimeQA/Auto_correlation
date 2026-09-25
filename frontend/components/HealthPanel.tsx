@@ -1,6 +1,5 @@
 import type { AnalysisSummary, Health } from "@/lib/api";
 import { HealthPill } from "./Badge";
-import { SummaryCounts } from "./SummaryCounts";
 
 function RunHealth({ title, health }: { title: string; health: Health }) {
   const businessCount = health.business_signals.filter((s) => s.kind !== "assertion_failed").length;
@@ -66,7 +65,6 @@ function RunHealth({ title, health }: { title: string; health: Health }) {
 export function HealthPanel({ summary }: { summary: AnalysisSummary }) {
   return (
     <div className="space-y-3">
-      <SummaryCounts summary={summary} />
       {summary.warnings.map((w, i) => (
         <div key={i} className="rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs text-warn">
           ⚠ {w}

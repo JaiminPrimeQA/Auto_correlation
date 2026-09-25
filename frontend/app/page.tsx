@@ -12,80 +12,32 @@ import { ManualRuleForm } from "@/components/ManualRuleForm";
 import { PreviewGenerate } from "@/components/PreviewGenerate";
 import { HelpNote } from "@/components/HelpNote";
 import { CollectionWizard } from "@/components/collection/CollectionWizard";
-import { ToastProvider } from "@/components/ui/Toast";
+import { ResultsHeader } from "@/components/results/ResultsHeader";
+import { NextStepCard } from "@/components/results/NextStepCard";
+import { ToastProvider, useToast } from "@/components/ui/Toast";
 import { discardSession } from "@/lib/session";
 
 type Tab = "health" | "explorer" | "candidates" | "classification" | "graph" | "manual" | "generate";
 
-export default function Page() {
-  const [summary, setSummary] = useState<AnalysisSummary | null>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [wizardKey, setWizardKey] = useState(0);
-  const [tab, setTab] = useState<Tab>("health");
-  const [ruleCount, setRuleCount] = useState(0);
-  const [autoMsg, setAutoMsg] = useState<string | null>(null);
-  const [autoBusy, setAutoBusy] = useState(false);
-  const autoSubmitted = useRef(false);
-  const currentAnalysis = useRef<string | null>(null);
+type AutoCorrelateResult = Awaited<ReturnType<typeof api.autoCorrelate>>;
 
-  async function autoCorrelateAll() {
-    if (!summary || autoSubmitted.current || summary.auto_correlation_status === "completed") return;
-    autoSubmitted.current = true;
-    const analysisId = summary.analysis_id;
-    setAutoBusy(true);
-    setAutoMsg(null);
-    try {
-      const r = await api.autoCorrelate(analysisId);
-      if (currentAnalysis.current !== analysisId) return;
-      setSummary((current) => current ? { ...current, auto_correlation_status: "completed" } : current);
-      setAutoMsg(
-        r.total > 0
-          ? `Correlation completed: ${r.total} variable(s) — ${r.variables.join(", ")}. Open Generate to build the JMX.`
-          : "No unambiguous response-to-request dependencies were found. Review placeholders and conflicting values under Add rule.",
-      );
-      await refresh();
-      if (currentAnalysis.current === analysisId) setTab("graph");
-    } catch (e) {
-      if (currentAnalysis.current !== analysisId) return;
-      autoSubmitted.current = false;
-      setAutoMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (currentAnalysis.current === analysisId) setAutoBusy(false);
-    }
-  }
+function Results({
+  summary, tab, setTab, ruleCount, refresh, autoBusy, autoCorrelateAll, autoMsg,
+}: {
+  summary: AnalysisSummary;
+  tab: Tab;
+  setTab: (t: Tab) => void;
+  ruleCount: number;
+  refresh: () => Promise<void>;
+  autoBusy: boolean;
+  autoCorrelateAll: () => Promise<AutoCorrelateResult | undefined>;
+  autoMsg: string | null;
+}) {
+  const toast = useToast();
 
-  async function refresh() {
-    if (!summary) return;
-    const s = await api.getAnalysis(summary.analysis_id);
-    if (currentAnalysis.current !== s.analysis_id) return;
-    setSummary(s);
-    setRuleCount(s.rule_count);
-  }
-
-  function openAnalysis(s: AnalysisSummary, job: string | null = null) {
-    currentAnalysis.current = s.analysis_id;
-    autoSubmitted.current = false;
-    setAutoBusy(false); setAutoMsg(null); setTab("health");
-    setSummary(s); setRuleCount(s.rule_count); setJobId(job);
-  }
-
-  async function newAnalysis() {
-    const ids = { analysisId: summary?.analysis_id ?? null, jobId };
-    currentAnalysis.current = null; autoSubmitted.current = false;
-    setAutoBusy(false); setAutoMsg(null); setSummary(null); setJobId(null);
-    setWizardKey((k) => k + 1); // fresh wizard state
-    await discardSession(ids);
-  }
-
-  if (!summary) {
-    return (
-      <ToastProvider>
-        <AppHeader right={<button className="btn-ghost" onClick={newAnalysis}>New analysis</button>} />
-        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-          <CollectionWizard key={wizardKey} onDone={(s, job) => openAnalysis(s, job)} onJobCreated={setJobId} />
-        </main>
-      </ToastProvider>
-    );
+  async function handleAutoCorrelate() {
+    const r = await autoCorrelateAll();
+    if (r) toast.show(r.total > 0 ? `${r.total} correlations created` : "Nothing to correlate");
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -99,10 +51,9 @@ export default function Page() {
   ];
 
   return (
-    <ToastProvider>
-      <AppHeader right={<button className="btn-ghost" onClick={newAnalysis}>New analysis</button>} />
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
     <div className="space-y-4">
+      <ResultsHeader summary={summary} />
+      <NextStepCard summary={summary} busy={autoBusy} onAutoCorrelate={handleAutoCorrelate} onOpenTab={setTab} />
       <nav className="flex flex-wrap gap-1 border-b border-edge">
         {tabs.map((t) => (
           <button
@@ -168,8 +119,8 @@ export default function Page() {
               </div>
               <button
                 className="btn"
-                onClick={autoCorrelateAll}
-                disabled={autoBusy || autoSubmitted.current || summary.auto_correlation_status === "running" || summary.auto_correlation_status === "completed"}
+                onClick={handleAutoCorrelate}
+                disabled={autoBusy || summary.auto_correlation_status === "running" || summary.auto_correlation_status === "completed"}
               >
                 {autoBusy
                   ? "Correlating…"
@@ -243,6 +194,89 @@ export default function Page() {
         </>
       )}
     </div>
+  );
+}
+
+export default function Page() {
+  const [summary, setSummary] = useState<AnalysisSummary | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [wizardKey, setWizardKey] = useState(0);
+  const [tab, setTab] = useState<Tab>("health");
+  const [ruleCount, setRuleCount] = useState(0);
+  const [autoMsg, setAutoMsg] = useState<string | null>(null);
+  const [autoBusy, setAutoBusy] = useState(false);
+  const autoSubmitted = useRef(false);
+  const currentAnalysis = useRef<string | null>(null);
+
+  async function autoCorrelateAll(): Promise<AutoCorrelateResult | undefined> {
+    if (!summary || autoSubmitted.current || summary.auto_correlation_status === "completed") return undefined;
+    autoSubmitted.current = true;
+    const analysisId = summary.analysis_id;
+    setAutoBusy(true);
+    setAutoMsg(null);
+    try {
+      const r = await api.autoCorrelate(analysisId);
+      if (currentAnalysis.current !== analysisId) return undefined;
+      setSummary((current) => current ? { ...current, auto_correlation_status: "completed" } : current);
+      setAutoMsg(
+        r.total > 0
+          ? `Correlation completed: ${r.total} variable(s): ${r.variables.join(", ")}. Open Generate to build the JMX.`
+          : "No unambiguous response-to-request dependencies were found. Review placeholders and conflicting values under Add rule.",
+      );
+      await refresh();
+      if (currentAnalysis.current === analysisId) setTab("graph");
+      return r;
+    } catch (e) {
+      if (currentAnalysis.current !== analysisId) return undefined;
+      autoSubmitted.current = false;
+      setAutoMsg(e instanceof Error ? e.message : String(e));
+      return undefined;
+    } finally {
+      if (currentAnalysis.current === analysisId) setAutoBusy(false);
+    }
+  }
+
+  async function refresh() {
+    if (!summary) return;
+    const s = await api.getAnalysis(summary.analysis_id);
+    if (currentAnalysis.current !== s.analysis_id) return;
+    setSummary(s);
+    setRuleCount(s.rule_count);
+  }
+
+  function openAnalysis(s: AnalysisSummary, job: string | null = null) {
+    currentAnalysis.current = s.analysis_id;
+    autoSubmitted.current = false;
+    setAutoBusy(false); setAutoMsg(null); setTab("health");
+    setSummary(s); setRuleCount(s.rule_count); setJobId(job);
+  }
+
+  async function newAnalysis() {
+    const ids = { analysisId: summary?.analysis_id ?? null, jobId };
+    currentAnalysis.current = null; autoSubmitted.current = false;
+    setAutoBusy(false); setAutoMsg(null); setSummary(null); setJobId(null);
+    setWizardKey((k) => k + 1); // fresh wizard state
+    await discardSession(ids);
+  }
+
+  return (
+    <ToastProvider>
+      <AppHeader right={<button className="btn-ghost" onClick={newAnalysis}>New analysis</button>} />
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        {!summary ? (
+          <CollectionWizard key={wizardKey} onDone={(s, job) => openAnalysis(s, job)} onJobCreated={setJobId} />
+        ) : (
+          <Results
+            summary={summary}
+            tab={tab}
+            setTab={setTab}
+            ruleCount={ruleCount}
+            refresh={refresh}
+            autoBusy={autoBusy}
+            autoCorrelateAll={autoCorrelateAll}
+            autoMsg={autoMsg}
+          />
+        )}
       </main>
     </ToastProvider>
   );
