@@ -168,8 +168,8 @@ hotel booking.
 | Run health | Both runs 7/7 successful, alignment 100 %, readiness **Ready** |
 | Candidates | `token` (from Login, used in the `Cookie` of PUT/PATCH/DELETE) and `bookingid` (from Create booking, used in the URL of Get/PUT/PATCH/Delete) |
 | Auto-correlate | Creates `token`, `bookingid` and three echoed values (`firstname`, `lastname`, `checkin`) |
-| Generate | *Generated JMX*; PUT/PATCH/Delete carry a **Set client cookies (token)** step |
-| Validate with JMeter | **✓ Validated JMX** — 7/7 samplers pass (Delete answers 201; that is normal for this API) |
+| Generate | *Generated JMX*; PUT/PATCH/Delete carry a **Set client cookies (token)** step; the login body contains `"password": "${__P(password,)}"` — the real password is never written into the plan |
+| Validate with JMeter | A **password** field appears: type `password123`, then validate. **✓ Validated JMX** — 7/7 samplers pass (Delete answers 201; that is normal for this API). Without the password, validation fails on purpose |
 
 Why this is a good test: the login token and the booking id are **different on every run**,
 so a plan that replays the recorded values fails, and only a correctly correlated plan passes.
@@ -185,7 +185,7 @@ secret `api_key`).
 | Run `frontend/e2e/fixtures/blocked-destination.postman_collection.json` and enter `10.0.0.5` for `internal_host` | The run is refused because the target is a private address. Private/internal addresses are never called. |
 | In Test D, leave a required variable empty | You cannot start the run until it is filled in. |
 | Click **Run collection twice** several times quickly | Only **one** job starts. |
-| Run the `checkout-demo` alternative, then search the backend terminal and the downloaded JMX for the `api_key` text you typed | It does not appear anywhere. |
+| After Test D, search the downloaded JMX for `password123` | It does not appear. Secret body fields (password, client_secret, api_key) and secret headers become `${__P(name,)}` properties. |
 | Upload two runs where every request failed (e.g. all 401) | Run health says *not ready*; the tool does not claim a successful correlation. |
 
 ---

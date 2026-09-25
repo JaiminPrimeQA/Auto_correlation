@@ -41,6 +41,16 @@ def is_sensitive_key(key: str | None) -> bool:
     return any(p.search(key) for p in SENSITIVE_KEY_PATTERNS)
 
 
+# Request-BODY field names that carry a credential the tester supplies. Narrower
+# than SENSITIVE_KEY_PATTERNS: body fields such as tokenType or sessionCount are
+# not secrets, and correlated tokens are already ${var} references.
+_SECRET_FIELD = re.compile(r"passw(or)?d|secret|api[-_]?key", re.I)
+
+
+def is_secret_field_name(name: str | None) -> bool:
+    return bool(name) and bool(_SECRET_FIELD.search(name or ""))
+
+
 def looks_like_secret_value(value: str | None) -> bool:
     if not value:
         return False

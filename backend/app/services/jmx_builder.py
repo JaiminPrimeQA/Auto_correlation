@@ -24,7 +24,7 @@ from ..domain.models import (
     Pair,
     ValueOccurrence,
 )
-from ..utils.masking import is_sensitive_key
+from ..utils.masking import is_secret_field_name, is_sensitive_key
 from ..utils.naming import sanitize_variable_name
 from ..utils.xml import to_string
 from .header_policy import NON_REPLAYED_HEADERS
@@ -64,6 +64,15 @@ def _groovy_value(value: str) -> str:
     if pos < len(value) or not parts:
         parts.append(_groovy_str(value[pos:]))
     return " + ".join(parts)
+
+
+_LEAF_KEY = re.compile(r"(?:\.([A-Za-z_]\w*)|\['([^']*)'\])$")
+
+
+def _leaf_key(path: str) -> str | None:
+    """'$.client.client_secret' -> 'client_secret'; list items have no key."""
+    m = _LEAF_KEY.search(path)
+    return (m.group(1) or m.group(2)) if m else None
 
 
 def _client_cookies(request: NormalizedRequest, server_cookies: set[str]) -> list[Pair]:
@@ -616,8 +625,23 @@ class JmxBuilder:
                     replaced += 1
                     _mark(con)
 
-        if json_subs and req.parsed_body is not None:
-            done_paths = self._apply_json_subs(req, json_subs)
+        # Credential fields in a JSON body (password, client_secret, api_key) are
+        # supplied at run time like secret headers: "password": "${__P(password,)}".
+        body_secrets: list[tuple[str, str]] = []  # (canonical path, property)
+        if self._externalize_secrets() and req.parsed_body is not None:
+            from .value_indexer import flatten_json
+
+            sub_paths = {con.canonical_path for con, _ in json_subs}
+            for path, value in flatten_json(req.parsed_body):
+                field = _leaf_key(path)
+                if (isinstance(value, str) and value and "${" not in value
+                        and path not in sub_paths and is_secret_field_name(field)):
+                    prop = sanitize_variable_name(field or "")
+                    body_secrets.append((path, prop))
+                    property_names.append(prop)
+
+        if (json_subs or body_secrets) and req.parsed_body is not None:
+            done_paths = self._apply_json_subs(req, json_subs, body_secrets)
             replaced += len(done_paths)
             for con, _var in json_subs:
                 if con.canonical_path in done_paths:
@@ -630,7 +654,12 @@ class JmxBuilder:
         # NEVER written into the executable plan. Only sensitive KEYS are
         # externalised; secret-SHAPED values under innocuous keys are left for
         # manual review (see classification.py), not auto-externalised.
-        if self.options.externalize_secrets and not self.options.include_static_secrets:
+        if self._externalize_secrets():
+            for f in req.form_data:
+                if f.value and "${" not in f.value and is_secret_field_name(f.name):
+                    prop = sanitize_variable_name(f.name)
+                    f.value = f"${{__P({prop},)}}"
+                    property_names.append(prop)
             for h in req.headers:
                 if h.name.lower() in _EXCLUDED_HEADERS:
                     continue  # dropped by the header manager anyway
@@ -684,9 +713,16 @@ class JmxBuilder:
                 return 1
         return 0
 
-    def _apply_json_subs(self, req, json_subs: list[tuple[ValueOccurrence, str]]) -> set[str]:
-        """Serialise ${var} into the JSON body. Returns the canonical paths that
-        were actually substituted (so the caller can detect ones that were not)."""
+    def _externalize_secrets(self) -> bool:
+        return self.options.externalize_secrets and not self.options.include_static_secrets
+
+    def _apply_json_subs(
+        self, req, json_subs: list[tuple[ValueOccurrence, str]],
+        secrets: list[tuple[str, str]] | None = None,
+    ) -> set[str]:
+        """Serialise ${var} (and ${__P(prop,)} for secret fields) into the JSON
+        body. Returns the canonical paths of the consumer substitutions that
+        were actually made (so the caller can detect ones that were not)."""
         body = copy.deepcopy(req.parsed_body)
         markers: list[tuple[str, str, bool]] = []  # (marker, replacement, numeric_context)
         done: set[str] = set()
@@ -697,6 +733,10 @@ class JmxBuilder:
             if _set_json_path(body, con.canonical_path, marker):
                 markers.append((marker, (con.wrapper or "") + f"${{{var}}}", numeric))
                 done.add(con.canonical_path)
+        for index, (path, prop) in enumerate(secrets or []):
+            marker = f"@@B11_SECRET_{index}_{prop}@@"
+            if _set_json_path(body, path, marker):
+                markers.append((marker, f"${{__P({prop},)}}", False))
         text = json.dumps(body, ensure_ascii=False)
         for marker, token, numeric in markers:
             if numeric:
@@ -708,6 +748,8 @@ class JmxBuilder:
         req.parsed_body = copy.deepcopy(body)
         for con, var in json_subs:
             _set_json_path(req.parsed_body, con.canonical_path, (con.wrapper or "") + f"${{{var}}}")
+        for path, prop in secrets or []:
+            _set_json_path(req.parsed_body, path, f"${{__P({prop},)}}")
         return done
 
 
