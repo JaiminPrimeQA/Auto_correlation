@@ -38,7 +38,7 @@ export function InsightsPanel({ analysisId }: { analysisId: string }) {
             key={f.id}
             onClick={() => setFilter(f.id)}
             className={`rounded-[10px] px-2 py-1 text-xs ${
-              filter === f.id ? "bg-accent text-accent-ink" : "bg-surface2 text-fg hover:text-fg"
+              filter === f.id ? "bg-accent text-accent-ink" : "bg-surface2 text-fg-muted hover:text-fg"
             }`}
           >
             {f.label}
