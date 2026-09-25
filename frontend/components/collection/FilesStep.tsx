@@ -23,12 +23,12 @@ function DropZone({
       </span>
       <label
         htmlFor={id}
-        className={`focus-within:ring-accent/30 flex cursor-pointer items-center gap-3.5 rounded-xl border-[1.5px] p-4 transition-colors duration-150 focus-within:ring-[3px] ${
+        className={`focus-within:ring-accent/30 flex cursor-pointer items-center gap-3.5 rounded-[10px] border-[1.5px] p-4 transition-colors duration-150 focus-within:ring-[3px] ${
           file ? "border-solid border-accent/40 bg-accent-soft/40" : "border-dashed border-line-strong bg-surface2 hover:border-accent"
         }`}
       >
         <span
-          className={`grid h-10 w-10 flex-none place-items-center rounded-[10px] transition-transform duration-200 ${
+          className={`grid h-10 w-10 flex-none place-items-center rounded-[10px] transition-transform duration-150 ${
             file ? "scale-[1.04] bg-accent text-accent-ink" : "bg-accent-soft text-accent-soft-ink"
           }`}
         >
@@ -99,7 +99,7 @@ export function FilesStep({
         <ol style={{ "--i": 2 } as React.CSSProperties} className="space-y-3.5">
           {HOW.map(([title, text], i) => (
             <li key={title} className="flex gap-3 text-sm leading-normal text-fg-muted">
-              <span className="grid h-7 w-7 flex-none place-items-center rounded-lg bg-accent-soft text-xs font-semibold text-accent-soft-ink">{i + 1}</span>
+              <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent-soft-ink">{i + 1}</span>
               <span><b className="block font-medium text-fg">{title}</b>{text}</span>
             </li>
           ))}
