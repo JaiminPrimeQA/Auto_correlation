@@ -30,6 +30,7 @@ jmeter.log
 
 # Worktrees
 .worktrees/
+.claude/worktrees/
 
 # Editor
 .vscode/
