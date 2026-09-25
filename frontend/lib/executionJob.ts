@@ -1,7 +1,7 @@
 // Pure helpers for the "Run a Postman collection" wizard: stage copy, progress
 // status, failure guidance, and which variable values to ask for.
 
-import type { CollectionInspection, ExecutionJob, ExecutionJobState, PostmanVariable } from "./api";
+import type { CollectionInspection, ExecutionJobState, PostmanVariable } from "./api";
 
 export const POLL_INTERVAL_MS = 1500;
 
@@ -36,7 +36,7 @@ export type StageStatus = "done" | "current" | "failed" | "pending";
  * stage started; the stage a failed/cancelled job stopped in is `failed`. */
 export function stageStatus(
   stage: ExecutionJobState,
-  job: Pick<ExecutionJob, "state" | "stage_history">,
+  job: { state: ExecutionJobState; stage_history: readonly ExecutionJobState[] },
 ): StageStatus {
   const order = STAGES.map((s) => s.state);
   const index = order.indexOf(stage);

@@ -11,11 +11,14 @@ import { DependencyGraph } from "@/components/DependencyGraph";
 import { ManualRuleForm } from "@/components/ManualRuleForm";
 import { PreviewGenerate } from "@/components/PreviewGenerate";
 import { HelpNote } from "@/components/HelpNote";
+import { ModeChooser, type InputMode } from "@/components/ModeChooser";
+import { CollectionWizard } from "@/components/collection/CollectionWizard";
 
 type Tab = "health" | "explorer" | "candidates" | "classification" | "graph" | "manual" | "generate";
 
 export default function Page() {
   const [summary, setSummary] = useState<AnalysisSummary | null>(null);
+  const [mode, setMode] = useState<InputMode | null>(null);
   const [tab, setTab] = useState<Tab>("health");
   const [ruleCount, setRuleCount] = useState(0);
   const [autoMsg, setAutoMsg] = useState<string | null>(null);
@@ -57,13 +60,30 @@ export default function Page() {
     setRuleCount(s.rule_count);
   }
 
+  function openAnalysis(s: AnalysisSummary) {
+    currentAnalysis.current = s.analysis_id;
+    autoSubmitted.current = false;
+    setAutoBusy(false); setAutoMsg(null); setTab("health");
+    setSummary(s); setRuleCount(s.rule_count);
+  }
+
   if (!summary) {
-    return <Uploader onDone={(s) => {
-      currentAnalysis.current = s.analysis_id;
-      autoSubmitted.current = false;
-      setAutoBusy(false); setAutoMsg(null); setTab("health");
-      setSummary(s); setRuleCount(s.rule_count);
-    }} />;
+    if (mode === "collection") {
+      return <CollectionWizard onDone={openAnalysis} onBack={() => setMode(null)} />;
+    }
+    if (mode === "reports") {
+      return (
+        <div className="space-y-2">
+          <div className="mx-auto flex max-w-2xl justify-end">
+            <button className="btn-ghost text-xs" onClick={() => setMode(null)}>
+              Choose another mode
+            </button>
+          </div>
+          <Uploader onDone={openAnalysis} />
+        </div>
+      );
+    }
+    return <ModeChooser onChoose={setMode} />;
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -87,7 +107,7 @@ export default function Page() {
         </div>
         <button
           className="btn-ghost text-xs"
-          onClick={() => { currentAnalysis.current = null; autoSubmitted.current = false; setAutoBusy(false); setAutoMsg(null); setSummary(null); }}
+          onClick={() => { currentAnalysis.current = null; autoSubmitted.current = false; setAutoBusy(false); setAutoMsg(null); setSummary(null); setMode(null); }}
         >
           Start new analysis
         </button>
