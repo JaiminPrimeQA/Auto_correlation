@@ -20,4 +20,4 @@ def test_newman_runner_is_disabled_by_default():
 def test_newman_runner_accepts_fake_and_rejects_unknown_values():
     assert Settings(newman_runner="fake").newman_runner == "fake"
     with pytest.raises(ValidationError):
-        Settings(newman_runner="docker")
+        Settings(newman_runner="kubernetes")

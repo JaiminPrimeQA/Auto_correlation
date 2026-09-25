@@ -70,7 +70,20 @@ class Settings(BaseSettings):
     # POST /execution-jobs answer 503 `runner_unavailable` without creating a
     # job; `fake` selects the deterministic canned FakeNewmanRunner (dev/tests
     # only - it never contacts the collection's targets).
-    newman_runner: Literal["disabled", "fake"] = "disabled"
+    newman_runner: Literal["disabled", "fake", "docker"] = "disabled"
+    # --- Docker Newman runner (Phase 3) ---
+    # Built from docker/newman/Dockerfile: node:22-alpine + newman@6.2.2, non-root.
+    newman_docker_image: str = "baseline11/newman:6.2.2"
+    newman_version: str = "6.2.2"
+    newman_container_memory: str = "512m"
+    newman_container_cpus: str = "1.0"
+    newman_container_pids_limit: int = 256
+    newman_request_timeout_ms: int = 30_000
+    # Added to job_run_timeout_seconds for container start-up before the run is killed.
+    newman_start_grace_seconds: int = 30
+    docker_binary: str = "docker"
+    # Global cap on simultaneously executing jobs (all owners), see job_dispatcher.
+    max_concurrent_executions: int = 4
 
     # --- Session store ---
     session_ttl_seconds: int = 30 * 60
