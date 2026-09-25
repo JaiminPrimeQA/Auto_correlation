@@ -14,6 +14,7 @@ from ..domain.postman_models import CollectionInspection
 from .postman_domain_extractor import extract_target_domains
 from .postman_folder_extractor import count_requests, extract_folders
 from .postman_parser import parse_collection, parse_environment
+from .postman_script_variables import script_set_variable_names
 from .postman_unsupported import detect_unsupported_features
 from .postman_variable_extractor import extract_variable_references
 from .postman_variable_resolver import collection_variable_values, resolve_variables, unresolved_names
@@ -47,6 +48,7 @@ def inspect_collection(
     references = extract_variable_references(collection_data)
     variables = resolve_variables(
         references, collection_variables=collection_variables, environment_values=environment_values,
+        script_set=script_set_variable_names(collection_data),
     )
     domain_report = extract_target_domains(
         collection_data,

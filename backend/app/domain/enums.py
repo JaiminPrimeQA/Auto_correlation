@@ -137,6 +137,7 @@ class VariableSource(str, Enum):
     ENVIRONMENT = "environment"
     COLLECTION = "collection"
     DYNAMIC = "dynamic"          # Postman built-in, e.g. {{$guid}} - resolved by Newman itself
+    SCRIPT = "script"            # set at runtime by a pre-request/test script (pm.environment.set, ...)
     UNRESOLVED = "unresolved"
 
 

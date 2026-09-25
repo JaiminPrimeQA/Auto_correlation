@@ -24,6 +24,7 @@ from ..repositories.execution_job_store import ExecutionJobStore, too_many_activ
 from . import analysis_service, destination_policy, postman_domain_extractor
 from .postman_folder_extractor import extract_folders
 from .postman_parser import parse_collection, parse_environment
+from .postman_script_variables import script_set_variable_names
 from .postman_variable_extractor import extract_variable_references
 from .postman_variable_resolver import collection_variable_values, resolve_variables, unresolved_names
 
@@ -94,6 +95,7 @@ def create_job(
         collection_variables=collection_variables,
         environment_values=environment_values,
         supplied=supplied_values,
+        script_set=script_set_variable_names(collection_data),
     )
     unresolved = unresolved_names(variables)
     if unresolved:

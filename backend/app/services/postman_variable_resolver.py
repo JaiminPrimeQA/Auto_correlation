@@ -3,7 +3,9 @@
 Precedence (highest to lowest): supplied runtime value, environment value,
 collection-level variable. A name starting with '$' is a Postman built-in
 dynamic variable (e.g. {{$guid}}) - Newman resolves these itself at
-execution time, so they are never reported as unresolved.
+execution time, so they are never reported as unresolved. A name with no
+static value that a collection script sets at runtime is reported as
+`script`, not `unresolved`.
 """
 
 from __future__ import annotations
@@ -22,8 +24,10 @@ def resolve_variables(
     collection_variables: dict[str, str],
     environment_values: dict[str, str],
     supplied: dict[str, str] | None = None,
+    script_set: set[str] | None = None,
 ) -> list[PostmanVariable]:
     supplied = supplied or {}
+    script_set = script_set or set()
     locations_by_name: dict[str, list[str]] = {}
     for ref in references:
         locations_by_name.setdefault(ref.name, []).append(ref.location)
@@ -38,6 +42,8 @@ def resolve_variables(
             source = VariableSource.ENVIRONMENT
         elif name in collection_variables:
             source = VariableSource.COLLECTION
+        elif name in script_set:
+            source = VariableSource.SCRIPT
         else:
             source = VariableSource.UNRESOLVED
         variables.append(PostmanVariable(

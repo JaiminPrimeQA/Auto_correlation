@@ -100,3 +100,27 @@ def test_collection_variable_values_canonicalizes_non_string_values_like_supplie
         "absent": "",
         "name": "raw",
     }
+
+
+def test_script_set_names_resolve_as_script_not_unresolved():
+    from app.domain.enums import VariableSource
+    from app.services.postman_variable_extractor import VariableReference
+    from app.services.postman_variable_resolver import resolve_variables, unresolved_names
+
+    refs = [VariableReference(name="token", location="Profile.header.Authorization"),
+            VariableReference(name="missing", location="Profile.url")]
+    variables = resolve_variables(refs, collection_variables={}, environment_values={}, script_set={"token"})
+    by_name = {v.name: v for v in variables}
+    assert by_name["token"].source == VariableSource.SCRIPT
+    assert unresolved_names(variables) == ["missing"]
+
+
+def test_static_values_take_precedence_over_script_set():
+    from app.domain.enums import VariableSource
+    from app.services.postman_variable_extractor import VariableReference
+    from app.services.postman_variable_resolver import resolve_variables
+
+    refs = [VariableReference(name="token", location="x")]
+    variables = resolve_variables(refs, collection_variables={}, environment_values={"token": "seed"},
+                                  script_set={"token"})
+    assert variables[0].source == VariableSource.ENVIRONMENT

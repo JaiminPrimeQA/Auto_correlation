@@ -210,3 +210,18 @@ def test_concurrent_creates_never_exceed_the_active_cap(monkeypatch):
     assert len(rejected) == n - 2
     assert all(e.status == 429 and e.code == "rate_limited" for e in rejected)
     assert store.count_active("127.0.0.1") == 2
+
+
+def test_variable_set_by_a_producer_script_does_not_block_creation():
+    login = pm_request("Login", "POST", "https://93.184.216.34/login")
+    login["event"] = [{"listen": "test", "script": {"exec": ['pm.environment.set("token", pm.response.json().t);']}}]
+    profile = pm_request("Profile", "GET", "https://93.184.216.34/me",
+                         headers=[{"key": "Authorization", "value": "Bearer {{token}}"}])
+    raw = json.dumps(pm_collection("Flow", [login, profile])).encode()
+    job, created = create_job(
+        collection_raw=raw, collection_filename="c.json", environment_raw=None, environment_filename=None,
+        folder_id=None, supplied_values={}, owner_key="127.0.0.1", idempotency_key=None,
+        store=_store(), settings=Settings(),
+    )
+    assert created is True
+    assert job.state == ExecutionJobState.QUEUED
