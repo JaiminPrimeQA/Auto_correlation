@@ -40,3 +40,10 @@ jmeter.log
 
 # Ephemeral smoke-test run output
 .smoke/
+
+# Terraform
+infra/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
