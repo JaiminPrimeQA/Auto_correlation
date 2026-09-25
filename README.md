@@ -145,6 +145,43 @@ fails the job.
 
 Real-Docker tests are opt-in: `B11_RUN_DOCKER_TESTS=1 ./.venv/Scripts/python.exe -m pytest -m docker`.
 
+### Sign-in (OIDC)
+
+Locally the app runs without sign-in and the owner of a job/analysis is the client IP.
+To require sign-in (always on in production), register an OIDC application for the UI
+(Authorization Code + PKCE, redirect URI `<origin>/auth/callback`) and an API audience, then:
+
+| Where | Setting |
+|-------|---------|
+| backend | `B11_AUTH_MODE=oidc`, `B11_OIDC_ISSUER=https://idp.example.com/`, `B11_OIDC_AUDIENCE=<api audience>` (optional `B11_OIDC_JWKS_URL`) |
+| frontend (`.env.local` / build args) | `NEXT_PUBLIC_OIDC_AUTHORITY`, `NEXT_PUBLIC_OIDC_CLIENT_ID`, optional `NEXT_PUBLIC_OIDC_AUDIENCE` |
+
+Every `/api/v1` call then needs a valid bearer token; jobs and analyses are private to the
+token's subject (another user's resource answers 404).
+
+### Production on AWS
+
+`B11_JOB_BACKEND=aws` switches execution to **API → SQS → worker → one Fargate runner task per
+Newman run**, with jobs in DynamoDB and job material/reports in KMS-encrypted S3. The runner
+task has no AWS credentials (presigned URLs only) and runs in a subnet whose network ACL blocks
+private and link-local ranges. Infrastructure, deployment steps and known limitations:
+[infra/terraform/README.md](infra/terraform/README.md). Container images: `docker/api`
+(API and worker), `docker/frontend`, `docker/newman-runner`.
+
+In production (`B11_ENVIRONMENT=production`) the API and worker refuse to start unless
+OIDC, explicit https CORS origins and every AWS setting are configured.
+
+Local check of the whole AWS path (moto instead of AWS, real runner containers):
+```bash
+docker build -t baseline11/newman-runner:6.2.2 docker/newman-runner
+docker compose -f docker/compose.aws-local.yml up -d
+cd backend && B11_RUN_AWS_LOCAL_TESTS=1 ./.venv/Scripts/python.exe -m pytest -m aws_local
+```
+
+Job metrics (`Baseline11/Execution`: `JobsCreated`, `JobsCompleted` by outcome/error code,
+`RunDurationSeconds`, `QueueWaitSeconds`) are written as CloudWatch Embedded Metric Format log
+lines; `/health` is liveness and `/health/ready` checks DynamoDB, SQS and S3 reachability.
+
 ---
 
 ## Commands

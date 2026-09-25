@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -19,11 +22,11 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Lint
         working-directory: backend
-        run: ruff check app
+        run: ruff check app tests
       - name: Type check
         working-directory: backend
-        run: mypy app || true   # advisory
-      - name: Unit + integration tests
+        run: mypy app
+      - name: Unit + integration tests (AWS via moto; no real AWS)
         working-directory: backend
         run: pytest -q
 
@@ -33,13 +36,69 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Install frontend deps
         working-directory: frontend
         run: npm ci
+      - name: Tests
+        working-directory: frontend
+        run: npm test
+      - name: Type check
+        working-directory: frontend
+        run: npm run typecheck
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  newman-runner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Runner entrypoint tests
+        run: node --test docker/newman-runner/run.test.mjs
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API/worker image
+        run: docker build -f docker/api/Dockerfile -t baseline11/api:ci .
+      - name: Build frontend image
+        run: docker build -f docker/frontend/Dockerfile -t baseline11/frontend:ci .
+      - name: Build Newman images
+        run: |
+          docker build -t baseline11/newman:6.2.2 docker/newman
+          docker build -t baseline11/newman-runner:6.2.2 docker/newman-runner
+      - name: API refuses an unsafe production configuration
+        run: |
+          if docker run --rm -e B11_ENVIRONMENT=production baseline11/api:ci; then
+            echo "API started with an unsafe production configuration" && exit 1
+          fi
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Format
+        run: terraform fmt -check -recursive
+      - name: Validate
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+      - name: Misconfiguration scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: infra/terraform
+          severity: HIGH,CRITICAL
+          exit-code: "1"
 
   jmeter-smoke:
     runs-on: ubuntu-latest
