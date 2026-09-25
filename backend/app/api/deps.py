@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from functools import lru_cache
 
 from fastapi import Depends, Request
@@ -12,6 +13,7 @@ from ..core.security import RateLimiter
 from ..domain.execution_job import ExecutionJob, NewmanRunner
 from ..repositories.analysis_store import Analysis, InMemorySessionStore, SessionStore
 from ..repositories.execution_job_store import ExecutionJobStore, InMemoryExecutionJobStore
+from ..services.docker_newman_runner import DockerNewmanRunner
 from ..services.fake_newman_runner import canned_fake_runner
 
 
@@ -54,11 +56,14 @@ def get_job_store() -> ExecutionJobStore:
 
 def get_newman_runner(settings: Settings = Depends(get_settings)) -> NewmanRunner | None:
     """The runner that executes a newly created job, or None when execution is
-    disabled (the default, spec §4) - the endpoint then answers 503 without
-    creating a job. `fake` yields a fresh canned FakeNewmanRunner per request.
+    unavailable (the default `disabled`, or `docker` without a Docker CLI) -
+    the endpoint then answers 503 without creating a job (spec §4). `fake`
+    yields a fresh canned FakeNewmanRunner per request.
     """
     if settings.newman_runner == "fake":
         return canned_fake_runner()
+    if settings.newman_runner == "docker" and shutil.which(settings.docker_binary):
+        return DockerNewmanRunner(settings)
     return None
 
 

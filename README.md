@@ -116,6 +116,29 @@ npm run dev                            # http://localhost:3000
 ```
 The dev server proxies `/api/*` to the backend (see `next.config.mjs`).
 
+### Running Postman collections (Docker Newman runner)
+
+Collection execution is disabled by default (`POST /api/v1/execution-jobs` answers 503).
+To enable it locally:
+
+1. Start Docker Desktop (or the Docker daemon).
+2. Build the pinned Newman 6.2.2 image once: `docker build -t baseline11/newman:6.2.2 docker/newman`
+3. Start the backend with `B11_NEWMAN_RUNNER=docker`.
+
+Each job runs the collection twice (baseline, comparison) in fresh, short-lived containers:
+read-only root filesystem, all Linux capabilities dropped, CPU/memory/process/file-size limits,
+a 5-minute wall-clock limit per run, and only the per-run temporary workspace mounted.
+Supplied variable values are written to a private environment file, never passed as
+command-line arguments. The container's DNS is disabled; it can reach only the hostnames that
+passed destination validation, pinned to the exact addresses that were checked.
+
+Known limitations of the local worker: redirects are not followed; a script that builds a URL
+from a raw IP address is not blocked at the network layer (production egress rules handle that);
+a request whose host comes only from a script-set variable cannot be validated in advance and
+fails the job.
+
+Real-Docker tests are opt-in: `B11_RUN_DOCKER_TESTS=1 ./.venv/Scripts/python.exe -m pytest -m docker`.
+
 ---
 
 ## Commands
