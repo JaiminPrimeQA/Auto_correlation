@@ -124,6 +124,12 @@ To enable it locally:
 1. Start Docker Desktop (or the Docker daemon).
 2. Build the pinned Newman 6.2.2 image once: `docker build -t baseline11/newman:6.2.2 docker/newman`
 3. Start the backend with `B11_NEWMAN_RUNNER=docker`.
+4. Open the frontend and choose **Run a Postman collection**: pick the collection (and optional
+   environment) → supply any missing variable values (secret-looking ones are hidden inputs and are
+   cleared once the job starts) → choose the whole collection or one folder and review the target
+   domains → **Run collection twice**. The progress page names the current stage; when both runs are
+   analysed it opens the usual Run health page. Failures stay on the progress page with guidance
+   and a Retry button (secret values must be re-entered).
 
 Each job runs the collection twice (baseline, comparison) in fresh, short-lived containers:
 read-only root filesystem, all Linux capabilities dropped, CPU/memory/process/file-size limits,
@@ -149,6 +155,7 @@ Real-Docker tests are opt-in: `B11_RUN_DOCKER_TESTS=1 ./.venv/Scripts/python.exe
 | Backend lint    | `backend> ruff check app`                               |
 | Backend types   | `backend> mypy app`                                     |
 | Frontend build  | `frontend> npm run build`                               |
+| Frontend tests  | `frontend> npm test` (Vitest + Testing Library)         |
 | JMeter provision| `scripts/provision_jmeter.sh` / `.ps1` (checksum-verified) |
 | JMeter smoke    | `python scripts/smoke_test.py --jmeter <path>/bin/jmeter` |
 
