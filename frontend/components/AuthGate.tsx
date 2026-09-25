@@ -10,7 +10,11 @@ type Status = { kind: "loading" } | { kind: "anonymous" } | { kind: "signed-in";
 /** Shows the app only to signed-in users when OIDC is configured, and wires
  * the access token into every API call. Without OIDC it renders the app as is. */
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<Status>({ kind: "loading" });
+  // Whether sign-in is configured is fixed at build time (NEXT_PUBLIC_*), so
+  // without it the app renders immediately - no loading flash.
+  const [status, setStatus] = useState<Status>(() =>
+    isAuthEnabled() ? { kind: "loading" } : { kind: "signed-in", name: null },
+  );
   const pathname = usePathname();
 
   useEffect(() => {

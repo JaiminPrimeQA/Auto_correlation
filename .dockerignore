@@ -1,0 +1,19 @@
+# Keep build contexts small and free of local secrets/artifacts.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/node_modules
+**/.next
+**/.env
+**/.env.local
+.git
+.claude
+reports
+samples
+*.jmx
+*.jtl
+jmeter.log
+infra/terraform/.terraform
