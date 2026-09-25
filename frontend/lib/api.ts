@@ -205,21 +205,113 @@ export interface ProblemError {
   errors?: { code?: string; path?: string; detail: string }[];
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+// Postman collection execution (spec §6). Values mirror the backend DTOs in
+// app/schemas/presenters.py.
+export interface PostmanFolder {
+  id: string;
+  name: string;
+  path: string;
+  request_count: number;
+}
+
+export type VariableSource = "supplied" | "environment" | "collection" | "dynamic" | "script" | "unresolved";
+
+export interface PostmanVariable {
+  name: string;
+  source: VariableSource;
+  sensitive: boolean;
+  locations: string[];
+}
+
+export interface UnsupportedFeature {
+  kind: string;
+  detail: string;
+  location: string | null;
+}
+
+export interface CollectionInspection {
+  collection_name: string;
+  folders: PostmanFolder[];
+  variables: PostmanVariable[];
+  unresolved_variable_names: string[];
+  request_count_estimate: number;
+  target_domains: string[];
+  domain_warnings: string[];
+  unsupported_features: UnsupportedFeature[];
+  warnings: string[];
+}
+
+export type ExecutionJobState =
+  | "uploaded"
+  | "awaiting_variables"
+  | "queued"
+  | "validating"
+  | "running_baseline"
+  | "running_comparison"
+  | "analyzing"
+  | "ready"
+  | "failed"
+  | "cancelled"
+  | "expired";
+
+export interface ExecutionJob {
+  job_id: string;
+  state: ExecutionJobState;
+  stage_history: ExecutionJobState[];
+  warnings: string[];
+  error_code: string | null;
+  error_detail: string | null;
+  analysis_id: string | null;
+  status_url?: string;
+}
+
+export interface CreateExecutionJobInput {
+  collection: File;
+  environment: File | null;
+  folderId: string | null;
+  suppliedValues: Record<string, string>;
+  idempotencyKey: string;
+}
+
+/** A failed API call: HTTP status plus the RFC 9457 problem code/detail. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+function parseBody(text: string): unknown {
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: text.slice(0, 200) };
+  }
+}
+
+async function send<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, init);
+  if (res.status === 204) return undefined as T;
+  const data = parseBody(await res.text());
+  if (!res.ok) {
+    const err = data as Partial<ProblemError>;
+    const detail = err.detail || err.code || `Request failed (${res.status})`;
+    const sub = (err.errors || []).map((e) => e.detail).join("; ");
+    throw new ApiError(sub ? `${detail}: ${sub}` : detail, res.status, err.code ?? null);
+  }
+  return data as T;
+}
+
+function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return send<T>(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
   });
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!res.ok) {
-    const err: ProblemError = data;
-    const detail = err.detail || err.code || "Request failed";
-    const sub = (err.errors || []).map((e) => e.detail).join("; ");
-    throw new Error(sub ? `${detail}: ${sub}` : detail);
-  }
-  return data as T;
 }
 
 export const api = {
@@ -231,6 +323,28 @@ export const api = {
     if (!res.ok) throw new Error(data.detail || "Upload failed");
     return data;
   },
+  inspectCollection(collection: File, environment?: File | null): Promise<CollectionInspection> {
+    const form = new FormData();
+    form.append("collection", collection, collection.name);
+    if (environment) form.append("environment", environment, environment.name);
+    return send<CollectionInspection>("/execution-jobs/inspect", { method: "POST", body: form });
+  },
+  createExecutionJob(input: CreateExecutionJobInput): Promise<ExecutionJob> {
+    const form = new FormData();
+    form.append("collection", input.collection, input.collection.name);
+    if (input.environment) form.append("environment", input.environment, input.environment.name);
+    if (input.folderId) form.append("folder_id", input.folderId);
+    form.append("supplied_values_json", JSON.stringify(input.suppliedValues));
+    form.append("confirm", "true");
+    return send<ExecutionJob>("/execution-jobs", {
+      method: "POST",
+      body: form,
+      headers: { "Idempotency-Key": input.idempotencyKey },
+    });
+  },
+  getExecutionJob: (id: string) => send<ExecutionJob>(`/execution-jobs/${encodeURIComponent(id)}`),
+  deleteExecutionJob: (id: string) =>
+    send<void>(`/execution-jobs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   getAnalysis: (id: string) => request<AnalysisSummary>(`/analyses/${id}`),
   listExecutions: (id: string, run = "baseline") =>
     request<{ items: ExecutionSummary[]; total: number }>(
