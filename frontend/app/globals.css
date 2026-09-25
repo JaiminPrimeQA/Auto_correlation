@@ -2,31 +2,150 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Calm Light tokens: RGB channels so Tailwind can apply opacity (bg-accent/20). */
 :root {
+  color-scheme: light;
+  --bg: 246 247 249;
+  --surface: 255 255 255;
+  --surface-2: 250 251 252;
+  --border: 230 232 236;
+  --border-strong: 211 216 223;
+  --ink: 21 24 29;
+  --muted: 85 93 105;
+  --subtle: 100 108 121;
+  --accent: 47 91 234;
+  --accent-hover: 38 80 216;
+  --accent-ink: 255 255 255;
+  --accent-soft: 234 240 254;
+  --accent-soft-ink: 36 71 196;
+  --ok: 4 120 87;
+  --ok-soft: 236 253 245;
+  --warn: 180 83 9;
+  --warn-soft: 255 247 230;
+  --danger: 201 48 44;
+  --danger-soft: 253 240 239;
+  --shadow-card: 0 1px 2px rgb(20 30 50 / 0.04), 0 8px 24px rgb(20 30 50 / 0.06);
+  --ring: 0 0 0 3px rgb(47 91 234 / 0.25);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --dur-press: 140ms;
+  --dur-quick: 150ms;
+  --dur-enter: 300ms;
+}
+
+/* Calm Dark: soft colours are pre-blended over --surface (no alpha in tokens). */
+[data-theme="dark"] {
   color-scheme: dark;
+  --bg: 15 17 21;
+  --surface: 22 25 31;
+  --surface-2: 27 31 38;
+  --border: 38 43 51;
+  --border-strong: 52 58 68;
+  --ink: 236 238 242;
+  --muted: 164 171 182;
+  --subtle: 138 146 158;
+  --accent: 123 155 255;
+  --accent-hover: 147 173 255;
+  --accent-ink: 12 21 48;
+  --accent-soft: 36 43 62;
+  --accent-soft-ink: 179 198 255;
+  --ok: 52 211 153;
+  --ok-soft: 26 47 46;
+  --warn: 251 191 36;
+  --warn-soft: 49 45 32;
+  --danger: 248 113 113;
+  --danger-soft: 49 36 41;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px rgb(0 0 0 / 0.35);
+  --ring: 0 0 0 3px rgb(123 155 255 / 0.35);
 }
 
 html,
 body {
-  background: #0b1220;
-  color: #e6edf7;
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-.badge {
-  @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-medium;
+body {
+  transition: background-color var(--dur-enter) ease, color var(--dur-enter) ease;
 }
-.badge-high { @apply bg-ok/20 text-ok; }
-.badge-medium { @apply bg-warn/20 text-warn; }
-.badge-low { @apply bg-edge text-slate-300; }
-.badge-rejected { @apply bg-danger/20 text-danger; }
 
-.btn {
-  @apply inline-flex items-center gap-2 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white
-         transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40;
+@layer components {
+  .focus-ring:focus-visible,
+  .btn:focus-visible,
+  .btn-secondary:focus-visible,
+  .btn-ghost:focus-visible,
+  .input:focus-visible {
+    outline: none;
+    box-shadow: var(--ring);
+  }
+
+  .btn,
+  .btn-secondary,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-2.5 text-sm font-semibold
+           disabled:cursor-not-allowed disabled:opacity-[0.45];
+    transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-quick) ease,
+      border-color var(--dur-quick) ease, color var(--dur-quick) ease, box-shadow var(--dur-quick) ease;
+  }
+  .btn:active:not(:disabled),
+  .btn-secondary:active:not(:disabled),
+  .btn-ghost:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .btn { @apply bg-accent text-accent-ink; }
+  .btn-secondary { @apply border border-line-strong bg-surface text-fg; }
+  .btn-ghost { @apply px-3 py-2 font-medium text-fg-muted; }
+
+  @media (hover: hover) and (pointer: fine) {
+    .btn:hover:not(:disabled) { @apply bg-accent-hover; }
+    .btn-secondary:hover:not(:disabled) { @apply bg-surface2; }
+    .btn-ghost:hover:not(:disabled) { @apply bg-surface2 text-fg; }
+  }
+
+  .card {
+    @apply rounded-[14px] border border-line bg-surface;
+    box-shadow: var(--shadow-card);
+  }
+
+  .input {
+    @apply w-full rounded-[10px] border border-line-strong bg-surface px-3 py-2.5 text-sm text-fg
+           placeholder:text-fg-subtle;
+    transition: border-color var(--dur-quick) ease, box-shadow var(--dur-quick) ease;
+  }
+  .input:focus { @apply border-accent; }
+
+  .badge { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium; }
+  .badge-high { @apply bg-ok-soft text-ok; }
+  .badge-medium { @apply bg-warn-soft text-warn; }
+  .badge-low { @apply border border-line bg-surface2 text-fg-muted; }
+  .badge-rejected { @apply bg-danger-soft text-danger; }
+  .badge-accent { @apply bg-accent-soft text-accent-soft-ink; }
+
+  .mono { font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace; }
 }
-.btn-ghost {
-  @apply inline-flex items-center gap-2 rounded-md border border-edge px-3 py-2 text-sm
-         text-slate-200 transition hover:bg-edge/50;
+
+@keyframes b11-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
-.card { @apply rounded-lg border border-edge bg-panel; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+@keyframes b11-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes b11-breathe {
+  50% { transform: scale(0.6); opacity: 0.6; }
+}
+
+/* Content that rises in on a new screen: set --i on each child (0..5). */
+.rise > * {
+  animation: b11-rise 420ms var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 5) * 50ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise > * { animation: b11-fade 180ms ease both !important; }
+  .breathe { animation: none !important; }
+  *, *::before, *::after { transition-duration: 180ms !important; }
+}
