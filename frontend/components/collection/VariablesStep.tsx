@@ -33,68 +33,73 @@ export function VariablesStep({
   const missing = missingValues(asked.map((v) => v.name), values);
 
   return (
-    <div className="card space-y-5 p-6">
+    <div className="mx-auto max-w-3xl space-y-5">
       <div>
-        <h2 className="text-lg font-semibold">Variables</h2>
-        <p className="mt-1 text-sm text-slate-400">
-          Values are never replaced with empty strings — every variable the collection uses must come from
+        <h2 className="text-lg font-semibold tracking-tight">Check the variables</h2>
+        <p className="mt-1 text-sm text-fg-muted">
+          Values are never replaced with empty strings: every variable the collection uses must come from
           somewhere before it can run.
         </p>
       </div>
 
-      {asked.length === 0 ? (
-        <p className="rounded bg-ok/10 px-3 py-2 text-sm text-ok">No values needed — every variable is resolved.</p>
-      ) : (
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium">Values to supply ({asked.length})</h3>
-          {asked.map((v) => (
-            <div key={v.name}>
-              <div className="flex items-center gap-2">
-                <label htmlFor={`var-${v.name}`} className="mono text-sm">
-                  {v.name}
-                </label>
-                {v.sensitive && <span className="badge badge-medium">secret · hidden</span>}
+      <div className="card space-y-5 p-5">
+        {asked.length === 0 ? (
+          <p className="rounded-[10px] bg-ok-soft px-3 py-2 text-sm text-ok">No values needed: every variable is resolved.</p>
+        ) : (
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium">Values to supply ({asked.length})</h3>
+            {asked.map((v) => (
+              <div key={v.name}>
+                <div className="flex items-center gap-2">
+                  <label htmlFor={`var-${v.name}`} className="mono text-sm">
+                    {v.name}
+                  </label>
+                  {v.sensitive && <span className="badge badge-medium">secret</span>}
+                </div>
+                <input
+                  id={`var-${v.name}`}
+                  type={v.sensitive ? "password" : "text"}
+                  autoComplete={v.sensitive ? "new-password" : "off"}
+                  spellCheck={false}
+                  value={values[v.name] ?? ""}
+                  onChange={(e) => onChange({ ...values, [v.name]: e.target.value })}
+                  className="input mono mt-1"
+                />
+                <p className="mt-0.5 text-xs text-fg-subtle">Used in {v.locations.slice(0, 3).join(", ")}{v.locations.length > 3 ? "..." : ""}</p>
               </div>
-              <input
-                id={`var-${v.name}`}
-                type={v.sensitive ? "password" : "text"}
-                autoComplete={v.sensitive ? "new-password" : "off"}
-                spellCheck={false}
-                value={values[v.name] ?? ""}
-                onChange={(e) => onChange({ ...values, [v.name]: e.target.value })}
-                className="mono mt-1 w-full rounded-md border border-edge bg-ink/60 px-3 py-2 text-sm focus:border-brand focus:outline-none"
-              />
-              <p className="mt-0.5 text-xs text-slate-500">Used in {v.locations.slice(0, 3).join(", ")}{v.locations.length > 3 ? " …" : ""}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {others.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium">Already resolved ({others.length})</h3>
-          <ul className="mt-2 space-y-1 text-sm">
-            {others.map((v) => (
-              <li key={v.name} className="flex flex-wrap items-center justify-between gap-2 rounded bg-ink/50 px-3 py-1.5">
-                <span className="mono">{v.name}</span>
-                <span className="text-xs text-slate-400">{SOURCE_TEXT[v.source]}</span>
-              </li>
             ))}
-          </ul>
-        </div>
-      )}
+          </div>
+        )}
 
-      <div className="flex justify-between gap-2">
-        <button className="btn-ghost" onClick={onBack}>
-          Back
-        </button>
-        <button className="btn" disabled={missing.length > 0} onClick={onContinue}>
-          Continue
-        </button>
+        {others.length > 0 && (
+          <div>
+            <h3 className="text-sm font-medium">Already resolved ({others.length})</h3>
+            <ul className="mt-2 space-y-1 text-sm">
+              {others.map((v) => (
+                <li key={v.name} className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-line bg-surface2 px-3 py-2">
+                  <span className="mono">{v.name}</span>
+                  <span className="flex items-center gap-2 text-xs text-fg-muted">
+                    {v.source === "script" && <span className="badge badge-accent">set by script</span>}
+                    {SOURCE_TEXT[v.source]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex justify-between gap-2">
+          <button className="btn-secondary" onClick={onBack}>
+            Back
+          </button>
+          <button className="btn" disabled={missing.length > 0} onClick={onContinue}>
+            Continue
+          </button>
+        </div>
+        {missing.length > 0 && asked.length > 0 && (
+          <p className="text-right text-xs text-fg-subtle">Still needed: {missing.join(", ")}</p>
+        )}
       </div>
-      {missing.length > 0 && asked.length > 0 && (
-        <p className="text-right text-xs text-slate-500">Still needed: {missing.join(", ")}</p>
-      )}
     </div>
   );
 }

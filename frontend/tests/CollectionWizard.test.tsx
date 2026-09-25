@@ -48,7 +48,7 @@ describe("CollectionWizard", () => {
     render(<CollectionWizard onDone={onDone} onBack={() => {}} />);
 
     await throughToReview();
-    fireEvent.change(screen.getByLabelText(/scope/i), { target: { value: "auth" } });
+    fireEvent.click(screen.getByRole("radio", { name: /^auth/i }));
     fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
 
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(summary));
@@ -105,7 +105,7 @@ describe("CollectionWizard", () => {
     await throughToReview();
     fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
     await screen.findByRole("alert");
-    fireEvent.change(screen.getByLabelText(/scope/i), { target: { value: "orders" } });
+    fireEvent.click(screen.getByRole("radio", { name: /^orders/i }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
     });
