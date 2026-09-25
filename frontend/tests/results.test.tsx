@@ -20,6 +20,16 @@ describe("ResultsHeader", () => {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
+
+  it("reassures when there are no confirmed correlations", () => {
+    render(<ResultsHeader summary={makeSummary({ ...summary, summary: { ...summary.summary, correlations: 0 } })} />);
+    expect(screen.getByText(/nothing was fabricated/i)).toBeInTheDocument();
+  });
+
+  it("does not show the reassurance note when correlations were found", () => {
+    render(<ResultsHeader summary={summary} />);
+    expect(screen.queryByText(/nothing was fabricated/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("NextStepCard", () => {

@@ -33,6 +33,11 @@ export function ResultsHeader({ summary }: { summary: AnalysisSummary }) {
           );
         })}
       </div>
+      {summary.summary.correlations === 0 && (
+        <p className="mt-3 rounded-[10px] bg-surface2 px-3 py-2 text-[13px] text-fg-muted">
+          0 confirmed correlations: no earlier response was proven to produce a value that a later request reuses in both runs. Nothing was fabricated.
+        </p>
+      )}
       {summary.readiness.blockers.map((b) => (
         <p key={b} role="alert" className="mt-3 rounded-[10px] bg-danger-soft px-3 py-2 text-sm text-danger">{b}</p>
       ))}
