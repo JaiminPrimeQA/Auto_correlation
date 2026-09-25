@@ -74,7 +74,7 @@ export default function Page() {
         <>
           <AppHeader />
           <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-            <CollectionWizard onDone={openAnalysis} onBack={() => setMode(null)} />
+            <CollectionWizard onDone={(summary) => openAnalysis(summary)} />
           </main>
         </>
       );
