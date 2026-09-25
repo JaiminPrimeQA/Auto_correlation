@@ -1,16 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CheckIcon, XIcon } from "@phosphor-icons/react";
 import { api, ApiError, type AnalysisSummary, type ExecutionJob } from "@/lib/api";
 import { failureGuidance, isTerminal, POLL_INTERVAL_MS, STAGES, stageStatus, type StageStatus } from "@/lib/executionJob";
 
-const STATUS_ICON: Record<StageStatus, string> = { done: "✓", current: "●", failed: "✕", pending: "○" };
-const STATUS_CLASS: Record<StageStatus, string> = {
-  done: "text-ok",
-  current: "text-brand",
-  failed: "text-danger",
-  pending: "text-slate-600",
-};
+function StageDot({ status }: { status: StageStatus }) {
+  if (status === "done")
+    return (
+      <span className="z-[1] grid h-8 w-8 flex-none place-items-center rounded-full bg-accent text-accent-ink">
+        <CheckIcon size={14} weight="bold" aria-hidden />
+      </span>
+    );
+  if (status === "failed")
+    return (
+      <span className="z-[1] grid h-8 w-8 flex-none place-items-center rounded-full bg-danger text-accent-ink">
+        <XIcon size={14} weight="bold" aria-hidden />
+      </span>
+    );
+  if (status === "current")
+    return (
+      <span className="z-[1] grid h-8 w-8 flex-none place-items-center rounded-full border-2 border-accent bg-surface">
+        <span className="breathe h-2.5 w-2.5 rounded-full bg-accent" style={{ animation: "b11-breathe 1.1s ease-in-out infinite" }} />
+      </span>
+    );
+  return <span className="z-[1] h-8 w-8 flex-none rounded-full border-2 border-line bg-surface" />;
+}
 
 /** Step 4: poll the job, name the real stage, and stay here on failure. */
 export function ExecutionProgress({
@@ -82,59 +97,66 @@ export function ExecutionProgress({
   const active = !failed && !isTerminal(state);
 
   return (
-    <div className="card space-y-5 p-6">
+    <div className="card mx-auto max-w-2xl space-y-5 p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold">Executing your collection</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Two isolated Newman runs, then the same analysis as uploaded reports. Job{" "}
-            <span className="mono">{jobId.slice(0, 12)}</span>
+          <h2 className="text-lg font-semibold tracking-tight">Running your collection</h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            You can leave this page open. It moves on by itself when the analysis is ready.
           </p>
         </div>
         {active && (
-          <button className="btn-ghost text-xs" onClick={cancel} disabled={cancelling}>
-            {cancelling ? "Cancelling…" : "Cancel run"}
+          <button className="btn-secondary" onClick={cancel} disabled={cancelling}>
+            {cancelling ? "Cancelling..." : "Cancel run"}
           </button>
         )}
       </div>
 
-      <ol className="space-y-2">
+      <ol className="relative before:absolute before:bottom-4 before:left-[15px] before:top-4 before:w-0.5 before:bg-line">
         {STAGES.map((stage) => {
           const status = fatal && !job ? "pending" : stageStatus(stage.state, view);
           return (
-            <li key={stage.state} data-status={status} className="flex items-center gap-3 text-sm">
-              <span className={`w-4 text-center ${STATUS_CLASS[status]} ${status === "current" ? "animate-pulse" : ""}`}>
-                {STATUS_ICON[status]}
-              </span>
-              <span className={status === "pending" ? "text-slate-500" : "text-slate-200"}>{stage.label}</span>
+            <li
+              key={stage.state}
+              data-status={status}
+              className={`relative flex items-center gap-3.5 py-3 text-[14.5px] transition-colors duration-150 ${
+                status === "pending" ? "text-fg-subtle" : status === "current" ? "font-medium text-fg" : "text-fg"
+              }`}
+            >
+              <StageDot status={status} />
+              <span>{stage.label}</span>
             </li>
           );
         })}
       </ol>
 
-      {state === "ready" && <p role="status" className="text-sm text-ok">Both runs analysed — opening results…</p>}
+      {state === "ready" && <p role="status" className="text-sm text-ok">Both runs analysed. Opening results...</p>}
       {connectionLost && active && (
-        <p role="status" className="text-xs text-warn">Lost contact with the server — still retrying…</p>
+        <p role="status" className="text-xs text-warn">Lost contact with the server. Still retrying...</p>
       )}
 
       {failed && (
-        <div role="alert" className="space-y-2 rounded border border-danger/40 bg-danger/10 p-4 text-sm">
+        <div role="alert" className="space-y-2 rounded-[10px] bg-danger-soft p-4 text-sm">
           <p className="font-medium text-danger">
             {fatal ? "The job could not be followed" : state === "cancelled" ? "Run cancelled" : "The run did not complete"}
           </p>
-          <p className="text-slate-200">{fatal ?? job?.error_detail ?? "No details were reported."}</p>
+          <p className="text-fg">{fatal ?? job?.error_detail ?? "No details were reported."}</p>
           {job && job.warnings.length > 0 && (
-            <ul className="list-disc pl-5 text-slate-300">
+            <ul className="list-disc pl-5 text-fg-muted">
               {job.warnings.map((w) => <li key={w}>{w}</li>)}
             </ul>
           )}
-          <p className="text-slate-400">{failureGuidance(fatal ? null : job?.error_code)}</p>
-          {job?.error_code && <p className="mono text-xs text-slate-500">code: {job.error_code}</p>}
+          <p className="text-fg-muted">{failureGuidance(fatal ? null : job?.error_code)}</p>
+          {job?.error_code && (
+            <p className="mono text-xs text-fg-subtle">
+              code: {job.error_code}, job <span className="mono">{jobId.slice(0, 12)}</span>
+            </p>
+          )}
           <div className="flex gap-2 pt-1">
             <button className="btn" onClick={onRetry}>
               Retry
             </button>
-            <button className="btn-ghost" onClick={onStartOver}>
+            <button className="btn-secondary" onClick={onStartOver}>
               Start over
             </button>
           </div>
