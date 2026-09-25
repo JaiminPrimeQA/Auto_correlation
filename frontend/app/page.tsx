@@ -3,7 +3,6 @@
 import { useRef, useState } from "react";
 import { api, type AnalysisSummary } from "@/lib/api";
 import { AppHeader } from "@/components/AppHeader";
-import { Uploader } from "@/components/Uploader";
 import { HealthPanel } from "@/components/HealthPanel";
 import { Explorer } from "@/components/Explorer";
 import { CandidateTable } from "@/components/CandidateTable";
@@ -12,14 +11,16 @@ import { DependencyGraph } from "@/components/DependencyGraph";
 import { ManualRuleForm } from "@/components/ManualRuleForm";
 import { PreviewGenerate } from "@/components/PreviewGenerate";
 import { HelpNote } from "@/components/HelpNote";
-import { ModeChooser, type InputMode } from "@/components/ModeChooser";
 import { CollectionWizard } from "@/components/collection/CollectionWizard";
+import { ToastProvider } from "@/components/ui/Toast";
+import { discardSession } from "@/lib/session";
 
 type Tab = "health" | "explorer" | "candidates" | "classification" | "graph" | "manual" | "generate";
 
 export default function Page() {
   const [summary, setSummary] = useState<AnalysisSummary | null>(null);
-  const [mode, setMode] = useState<InputMode | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [wizardKey, setWizardKey] = useState(0);
   const [tab, setTab] = useState<Tab>("health");
   const [ruleCount, setRuleCount] = useState(0);
   const [autoMsg, setAutoMsg] = useState<string | null>(null);
@@ -61,48 +62,29 @@ export default function Page() {
     setRuleCount(s.rule_count);
   }
 
-  function openAnalysis(s: AnalysisSummary) {
+  function openAnalysis(s: AnalysisSummary, job: string | null = null) {
     currentAnalysis.current = s.analysis_id;
     autoSubmitted.current = false;
     setAutoBusy(false); setAutoMsg(null); setTab("health");
-    setSummary(s); setRuleCount(s.rule_count);
+    setSummary(s); setRuleCount(s.rule_count); setJobId(job);
+  }
+
+  async function newAnalysis() {
+    const ids = { analysisId: summary?.analysis_id ?? null, jobId };
+    currentAnalysis.current = null; autoSubmitted.current = false;
+    setAutoBusy(false); setAutoMsg(null); setSummary(null); setJobId(null);
+    setWizardKey((k) => k + 1); // fresh wizard state
+    await discardSession(ids);
   }
 
   if (!summary) {
-    if (mode === "collection") {
-      return (
-        <>
-          <AppHeader />
-          <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-            <CollectionWizard onDone={(summary) => openAnalysis(summary)} />
-          </main>
-        </>
-      );
-    }
-    if (mode === "reports") {
-      return (
-        <>
-          <AppHeader />
-          <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-            <div className="space-y-2">
-              <div className="mx-auto flex max-w-2xl justify-end">
-                <button className="btn-ghost text-xs" onClick={() => setMode(null)}>
-                  Choose another mode
-                </button>
-              </div>
-              <Uploader onDone={openAnalysis} />
-            </div>
-          </main>
-        </>
-      );
-    }
     return (
-      <>
-        <AppHeader />
+      <ToastProvider>
+        <AppHeader right={<button className="btn-ghost" onClick={newAnalysis}>New analysis</button>} />
         <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-          <ModeChooser onChoose={setMode} />
+          <CollectionWizard key={wizardKey} onDone={(s, job) => openAnalysis(s, job)} />
         </main>
-      </>
+      </ToastProvider>
     );
   }
 
@@ -117,25 +99,10 @@ export default function Page() {
   ];
 
   return (
-    <>
-      <AppHeader />
+    <ToastProvider>
+      <AppHeader right={<button className="btn-ghost" onClick={newAnalysis}>New analysis</button>} />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-semibold">{summary.collection_name || "Analysis"}</h1>
-          <p className="text-xs text-slate-400">
-            mode: {summary.mode} · analysis <span className="mono">{summary.analysis_id.slice(0, 8)}…</span>
-          </p>
-        </div>
-        <button
-          className="btn-ghost text-xs"
-          onClick={() => { currentAnalysis.current = null; autoSubmitted.current = false; setAutoBusy(false); setAutoMsg(null); setSummary(null); setMode(null); }}
-        >
-          Start new analysis
-        </button>
-      </div>
-
       <nav className="flex flex-wrap gap-1 border-b border-edge">
         {tabs.map((t) => (
           <button
@@ -277,6 +244,6 @@ export default function Page() {
       )}
     </div>
       </main>
-    </>
+    </ToastProvider>
   );
 }
