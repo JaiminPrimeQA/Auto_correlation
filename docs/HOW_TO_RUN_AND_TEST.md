@@ -1,4 +1,4 @@
-# Baseline11 Auto-Correlate — How to Run and Test
+# Baseline11 Auto-Correlate: How to Run and Test
 
 A short, practical guide for anyone who wants to start the app on their own machine and check
 that it works. No prior knowledge of the codebase is needed.
@@ -13,7 +13,7 @@ and **re-use** it in later requests. This is called *correlation*.
 
 Baseline11 does this for you:
 
-1. It gets **two runs** of the same Postman flow — either you upload two Newman JSON reports,
+1. It gets **two runs** of the same Postman flow, either you upload two Newman JSON reports,
    or you upload a Postman collection and the tool runs it twice for you (inside Docker).
 2. It compares both runs, finds which values were produced by one response and re-used by a
    later request, and proposes correlation rules.
@@ -72,7 +72,7 @@ If you already have JMeter 5.6.3 somewhere else, set `B11_JMETER_HOME` to that f
 
 You need **two terminals**, and both must stay open.
 
-**Terminal 1 — Backend (API on port 8000)**
+**Terminal 1: Backend (API on port 8000)**
 
 ```powershell
 cd Auto_correlation\backend
@@ -80,7 +80,7 @@ $env:B11_NEWMAN_RUNNER = "docker"      # enables "Run a Postman collection"; omi
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-**Terminal 2 — Frontend (web app on port 3000)**
+**Terminal 2: Frontend (web app on port 3000)**
 
 ```powershell
 cd Auto_correlation\frontend
@@ -89,7 +89,7 @@ npm run dev
 
 Open **http://localhost:3000** in your browser.
 
-Quick check that the backend is alive: open http://127.0.0.1:8000/health — you should see
+Quick check that the backend is alive: open http://127.0.0.1:8000/health, you should see
 `{"status":"ok", ...}`.
 
 > Sign-in is turned off for local use. You will go straight to the start page.
@@ -103,23 +103,23 @@ Quick check that the backend is alive: open http://127.0.0.1:8000/health — you
 
 Do these in order. Each one lists what to do and what you should see.
 
-### Test A — Report upload (API only)
+### Test A: Report upload (API only)
 
 Uploading two existing Newman reports directly is not a start-page action any more; the app
 opens straight on the collection wizard. Report upload still works, but only through the API:
 `POST /api/v1/analyses` with the report files. To manually test the tool from the UI, run the
 booking-flow collection instead, see Test D.
 
-### Test B — Generate the JMeter plan
+### Test B: Generate the JMeter plan
 
 1. Open the **Generate** tab.
 2. Click **Preview Draft** to see the plan, then generate and download it.
 
-**Expected:** a `.jmx` file downloads. The badge says *Generated JMX — structurally valid,
+**Expected:** a `.jmx` file downloads. The badge says *Generated JMX: structurally valid,
 not yet executed*. Open it in JMeter: producer requests carry extractors, and later requests
 use `${variableName}`.
 
-### Test C — Validate with JMeter (needs Java + JMeter, see section 3)
+### Test C: Validate with JMeter (needs Java + JMeter, see section 3)
 
 The webhook sample needs its demo API running. Start it in a **third terminal**:
 
@@ -133,7 +133,7 @@ Then, in the **Generate** tab, click **Validate with JMeter**.
 **Expected:** a report shows every sampler, its success/failure, and which variables were
 extracted. If everything passes the badge changes to **✓ Validated JMX**.
 
-### Test D — Run a Postman collection twice (needs Docker + internet)
+### Test D: Run a Postman collection twice (needs Docker + internet)
 
 Use the ready-made **booking flow** in `samples/`. It calls the public practice API
 Restful-Booker (`https://restful-booker.herokuapp.com`) and books, updates and deletes a
@@ -147,7 +147,7 @@ hotel booking.
 1. The app opens on step 1 (Files).
 2. Pick the collection file and the environment file above.
 3. **Variables step:** nothing is missing. `password` shows as a hidden (secret) value, and
-   `token` / `bookingid` show as *set by a script* — they are created during the run.
+   `token` / `bookingid` show as *set by a script*, created during the run.
 4. **Scope and review:** keep the whole collection; the only target domain is
    `restful-booker.herokuapp.com`. Click **Run collection twice**.
 
@@ -155,12 +155,12 @@ hotel booking.
 
 | Where | You should see |
 |-------|----------------|
-| Progress page | validating → running baseline → running comparison → analysing → ready (about 30–60 s) |
+| Progress page | validating → running baseline → running comparison → analysing → ready (about 30-60 s) |
 | Run health | Both runs 7/7 successful, alignment 100 %, readiness **Ready** |
 | Candidates | `token` (from Login, used in the `Cookie` of PUT/PATCH/DELETE) and `bookingid` (from Create booking, used in the URL of Get/PUT/PATCH/Delete) |
 | Auto-correlate | Creates `token`, `bookingid` and three echoed values (`firstname`, `lastname`, `checkin`) |
-| Generate | *Generated JMX*; PUT/PATCH/Delete carry a **Set client cookies (token)** step; the login body contains `"password": "${__P(password,)}"` — the real password is never written into the plan |
-| Validate with JMeter | A **password** field appears: type `password123`, then validate. **✓ Validated JMX** — 7/7 samplers pass (Delete answers 201; that is normal for this API). Without the password, validation fails on purpose |
+| Generate | *Generated JMX*; PUT/PATCH/Delete carry a **Set client cookies (token)** step; the login body contains `"password": "${__P(password,)}"`, the real password is never written into the plan |
+| Validate with JMeter | A **password** field appears: type `password123`, then validate. **✓ Validated JMX**: 7/7 samplers pass (Delete answers 201; that is normal for this API). Without the password, validation fails on purpose |
 
 Why this is a good test: the login token and the booking id are **different on every run**,
 so a plan that replays the recorded values fails, and only a correctly correlated plan passes.
@@ -169,7 +169,7 @@ so a plan that replays the recorded values fails, and only a correctly correlate
 `checkout-demo.postman_environment.json` (calls `postman-echo.com`; type any text for the
 secret `api_key`).
 
-### Test E — Things that must be blocked (safety checks)
+### Test E: Things that must be blocked (safety checks)
 
 | Try this | Expected result |
 |----------|-----------------|
