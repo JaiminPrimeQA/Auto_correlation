@@ -574,10 +574,16 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
           {/* legend */}
           <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] bg-surface2/80 px-2 py-1 text-[10px] text-fg">
             <span className="inline-flex items-center gap-1">
-              <ArrowUpIcon size={14} color={ROLE_ACCENT.producer} aria-hidden /> producer
+              <span style={{ color: ROLE_ACCENT.producer }} className="inline-flex">
+                <ArrowUpIcon size={14} aria-hidden />
+              </span>{" "}
+              producer
             </span>
             <span className="inline-flex items-center gap-1">
-              <ArrowDownIcon size={14} color={ROLE_ACCENT.consumer} aria-hidden /> consumer
+              <span style={{ color: ROLE_ACCENT.consumer }} className="inline-flex">
+                <ArrowDownIcon size={14} aria-hidden />
+              </span>{" "}
+              consumer
             </span>
             <span><span style={{ color: ROLE_ACCENT.both }}>◆</span> both</span>
             <span><span style={{ color: CONF_STROKE.high }}>━</span> high</span>

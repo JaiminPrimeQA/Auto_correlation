@@ -32,9 +32,20 @@ const PAIRS: [string, string][] = [
   ["ok", "ok-soft"], ["warn", "warn-soft"], ["danger", "danger-soft"], ["danger", "surface"],
 ];
 
+const GRAPH_PAIRS: [string, string][] = [
+  ["graph-text", "graph-node"],
+  ["graph-consume", "graph-node"],
+  ["graph-produce", "graph-node"],
+];
+
 describe.each([[":root"], ['[data-theme="dark"]']])("tokens in %s", (selector) => {
   const vars = block(selector);
   it.each(PAIRS)("%s on %s meets WCAG AA", (fg, bg) => {
+    expect(vars[fg], `--${fg}`).toBeDefined();
+    expect(vars[bg], `--${bg}`).toBeDefined();
+    expect(ratio(vars[fg], vars[bg])).toBeGreaterThanOrEqual(4.5);
+  });
+  it.each(GRAPH_PAIRS)("%s on %s meets WCAG AA", (fg, bg) => {
     expect(vars[fg], `--${fg}`).toBeDefined();
     expect(vars[bg], `--${bg}`).toBeDefined();
     expect(ratio(vars[fg], vars[bg])).toBeGreaterThanOrEqual(4.5);
