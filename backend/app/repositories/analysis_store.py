@@ -49,6 +49,8 @@ class Analysis:
     auto_correlation_status: str = "not_started"  # not_started|running|completed|failed
     auto_correlated_at: float | None = None
     auto_correlation_result: dict | None = None  # cached response for repeat calls
+    # Who may read/modify this analysis (client IP, or `user:{sub}` with OIDC).
+    owner_key: str | None = None
 
     @property
     def sequence_run(self) -> NormalizedRun:

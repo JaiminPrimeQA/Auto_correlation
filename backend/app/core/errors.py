@@ -19,12 +19,14 @@ class ProblemException(Exception):
         title: str,
         detail: str | None = None,
         errors: list[dict[str, Any]] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.status = status
         self.code = code
         self.title = title
         self.detail = detail
         self.errors = errors or []
+        self.headers = headers or {}
         super().__init__(detail or title)
 
     def to_dict(self) -> dict[str, Any]:
@@ -49,6 +51,10 @@ def validation_error(detail: str, errors: list[dict[str, Any]] | None = None) ->
         status=422, code="validation_error", title="Validation failed",
         detail=detail, errors=errors,
     )
+
+
+def unauthorized(detail: str) -> ProblemException:
+    return ProblemException(status=401, code="unauthorized", title="Authentication required", detail=detail)
 
 
 def not_found(detail: str) -> ProblemException:
@@ -86,6 +92,7 @@ async def problem_exception_handler(_: Request, exc: ProblemException) -> JSONRe
         status_code=exc.status,
         content=exc.to_dict(),
         media_type="application/problem+json",
+        headers=exc.headers or None,
     )
 
 

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .api.deps import get_principal
 from .api.v1 import analyses, downloads, execution_jobs, rules
 from .core.config import get_settings
 from .core.errors import (
@@ -54,10 +55,12 @@ def create_app() -> FastAPI:
     if settings.is_production:
         app.add_exception_handler(Exception, unhandled_exception_handler)
 
-    app.include_router(analyses.router, prefix=settings.api_prefix)
-    app.include_router(rules.router, prefix=settings.api_prefix)
-    app.include_router(downloads.router, prefix=settings.api_prefix)
-    app.include_router(execution_jobs.router, prefix=settings.api_prefix)
+    # Every API route authenticates first (a no-op when auth_mode=disabled).
+    authenticated = [Depends(get_principal)]
+    app.include_router(analyses.router, prefix=settings.api_prefix, dependencies=authenticated)
+    app.include_router(rules.router, prefix=settings.api_prefix, dependencies=authenticated)
+    app.include_router(downloads.router, prefix=settings.api_prefix, dependencies=authenticated)
+    app.include_router(execution_jobs.router, prefix=settings.api_prefix, dependencies=authenticated)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:

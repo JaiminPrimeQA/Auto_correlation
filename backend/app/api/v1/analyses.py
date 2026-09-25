@@ -19,7 +19,7 @@ from ...services import analysis_service, jmeter_runner
 from ...services.jmx_builder import BuildOptions, JmxBuilder
 from ...services.jmx_validator import validate_jmx
 from ...services.manifest_builder import build_manifest
-from ..deps import enforce_rate_limit, get_store, require_analysis
+from ..deps import enforce_rate_limit, get_owner_key, get_store, require_analysis
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 log = get_logger("analyses")
@@ -30,6 +30,7 @@ async def create_analysis(
     files: list[UploadFile] = File(...),
     settings: Settings = Depends(get_settings),
     store: SessionStore = Depends(get_store),
+    owner_key: str = Depends(get_owner_key),
     _: None = Depends(enforce_rate_limit),
 ) -> dict:
     if not files or len(files) > settings.max_files:
@@ -39,6 +40,7 @@ async def create_analysis(
         raw = await f.read()
         payloads.append((f.filename or "report.json", raw))
     analysis = analysis_service.build_analysis(payloads, settings)
+    analysis.owner_key = owner_key
     store.create(analysis)
     log.info("analysis created", extra={"stage": "create", "analysis_id": analysis.id, "count": len(payloads)})
     return presenters.analysis_summary(analysis)

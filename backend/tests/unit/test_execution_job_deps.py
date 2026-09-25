@@ -18,11 +18,17 @@ def _request(host: str | None):
 
 
 def test_get_owner_key_uses_client_host():
-    assert get_owner_key(_request("10.0.0.5")) == "10.0.0.5"
+    assert get_owner_key(_request("10.0.0.5"), None) == "10.0.0.5"
 
 
 def test_get_owner_key_falls_back_when_no_client():
-    assert get_owner_key(_request(None)) == "unknown"
+    assert get_owner_key(_request(None), None) == "unknown"
+
+
+def test_get_owner_key_prefers_the_authenticated_subject():
+    from app.core.auth import Principal
+
+    assert get_owner_key(_request("10.0.0.5"), Principal(subject="abc")) == "user:abc"
 
 
 def test_require_owned_job_returns_job_for_matching_owner():
@@ -30,14 +36,14 @@ def test_require_owned_job_returns_job_for_matching_owner():
     job = ExecutionJob(id="j1", owner_key="10.0.0.5", collection_name="d",
                         created_at=time.time(), expires_at=time.time() + 60)
     store.create(job)
-    result = require_owned_job("j1", _request("10.0.0.5"), store)
+    result = require_owned_job("j1", store, "10.0.0.5")
     assert result is job
 
 
 def test_require_owned_job_404s_for_missing_job():
     store = InMemoryExecutionJobStore(ttl_seconds=60)
     with pytest.raises(ProblemException) as exc:
-        require_owned_job("missing", _request("10.0.0.5"), store)
+        require_owned_job("missing", store, "10.0.0.5")
     assert exc.value.status == 404
 
 
@@ -60,5 +66,5 @@ def test_require_owned_job_404s_for_mismatched_owner_not_403():
                         created_at=time.time(), expires_at=time.time() + 60)
     store.create(job)
     with pytest.raises(ProblemException) as exc:
-        require_owned_job("j1", _request("10.0.0.9"), store)
+        require_owned_job("j1", store, "10.0.0.9")
     assert exc.value.status == 404

@@ -108,6 +108,17 @@ class Settings(BaseSettings):
     # Minimum Shannon entropy (bits/char) hint for token-likeness scoring.
     token_entropy_hint: float = 2.5
 
+    # --- Authentication (spec §8) ---
+    # `disabled` (local development): the owner of a job/analysis is the client
+    # IP. `oidc`: every /api/v1 request needs a bearer JWT from `oidc_issuer`
+    # for `oidc_audience`; its `sub` owns what the caller creates.
+    auth_mode: Literal["disabled", "oidc"] = "disabled"
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+    # Optional; read from the issuer's discovery document when unset.
+    oidc_jwks_url: str | None = None
+    oidc_algorithms: str = "RS256"
+
     # --- JMeter validation ---
     # Path to a JMeter home (contains bin/jmeter[.bat]). Defaults to the bundled
     # Apache JMeter 5.6.3 under the repo's .jmeter directory when present.
@@ -133,6 +144,10 @@ class Settings(BaseSettings):
     @property
     def blocked_hostname_list(self) -> list[str]:
         return [h.strip().lower() for h in self.blocked_hostnames.split(",") if h.strip()]
+
+    @property
+    def oidc_algorithm_list(self) -> tuple[str, ...]:
+        return tuple(a.strip() for a in self.oidc_algorithms.split(",") if a.strip())
 
     @property
     def https_only(self) -> bool:

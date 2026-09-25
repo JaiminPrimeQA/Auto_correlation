@@ -468,5 +468,9 @@ def _drive_job(
         )
         return
 
+    job = store.get(job_id)
+    if job is None:
+        return
+    analysis.owner_key = job.owner_key
     analysis_store.create(analysis)
     _write_state(job_id, store, ExecutionJobState.READY, analysis_id=analysis.id)
