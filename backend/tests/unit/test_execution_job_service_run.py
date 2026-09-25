@@ -832,3 +832,18 @@ def test_log_formatter_emits_job_id_and_exc_type():
     record.exc_type = "RuntimeError"
     payload = json.loads(RedactingJsonFormatter().format(record))
     assert (payload["job_id"], payload["stage"], payload["exc_type"]) == ("job_1", "analyzing", "RuntimeError")
+
+
+def test_runner_receives_the_validated_host_pins():
+    store = InMemoryExecutionJobStore(ttl_seconds=60)
+    job = _queued_job(store)
+    runner = FakeNewmanRunner([
+        RunOutcome(success=True, report_bytes=_newman_report("tok_AAA111")),
+        RunOutcome(success=True, report_bytes=_newman_report("tok_ZZZ999")),
+    ])
+    collection = pm_collection("Demo", [pm_request("Ping", "GET", "https://api.example.com/ping")])
+    _run(job, runner, store, collection_data=collection, resolver=lambda host: ["93.184.216.34"])
+    assert store.get(job.id).state == ExecutionJobState.READY
+    assert runner.calls[0].host_pins == {"api.example.com": ["93.184.216.34"]}
+    assert runner.calls[1].host_pins == {"api.example.com": ["93.184.216.34"]}
+    assert runner.calls[0].host_pins is not runner.calls[1].host_pins

@@ -145,3 +145,16 @@ def test_repeat_host_still_checks_each_urls_scheme():
     assert len(report.warnings) == 1
     assert "Plain HTTP" in report.warnings[0]
     assert "Blocked" in report.warnings[0]
+
+
+def test_pinned_addresses_record_validated_hostnames_only():
+    answers = {"api.example.com": ["93.184.216.34", "93.184.216.35"], "internal.example.com": ["10.0.0.5"]}
+    collection = pm_collection("C", [
+        pm_request("A", "GET", "https://api.example.com/a"),
+        pm_request("B", "GET", "https://api.example.com/b"),
+        pm_request("C", "GET", "https://93.184.216.36/c"),
+        pm_request("D", "GET", "https://internal.example.com/d"),
+    ])
+    report = extract_target_domains(collection, environment_values={}, settings=Settings(),
+                                    resolver=lambda host: answers[host])
+    assert report.pinned_addresses == {"api.example.com": ["93.184.216.34", "93.184.216.35"]}

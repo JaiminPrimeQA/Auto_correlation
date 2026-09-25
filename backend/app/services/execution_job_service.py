@@ -426,6 +426,7 @@ def _drive_job(
             supplied_values=copy.deepcopy(supplied_values),
             folder_id=folder_id,
             timeout_seconds=settings.job_run_timeout_seconds,
+            host_pins=copy.deepcopy(domain_report.pinned_addresses),
         )
 
     baseline = _run_stage(job_id, store, runner, _fresh_run_input, ExecutionJobState.RUNNING_BASELINE, settings)

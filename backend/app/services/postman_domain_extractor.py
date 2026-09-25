@@ -23,6 +23,10 @@ _VAR = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
 class DomainReport:
     resolved_domains: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Validated hostname -> the exact addresses the policy checked. The Docker
+    # runner pins these into the container so it can never re-resolve a name
+    # to a different (unvalidated) address.
+    pinned_addresses: dict[str, list[str]] = field(default_factory=dict)
 
 
 class _ResolutionLimitReached(Exception):
@@ -33,8 +37,8 @@ def _cached_resolver(
     resolver: destination_policy.Resolver,
     *,
     max_hosts: int,
+    outcomes: dict[str, list[str] | ProblemException],
 ) -> destination_policy.Resolver:
-    outcomes: dict[str, list[str] | ProblemException] = {}
 
     def resolve(hostname: str) -> list[str]:
         cached = outcomes.get(hostname)
@@ -89,9 +93,11 @@ def extract_target_domains(
 ) -> DomainReport:
     resolved: set[str] = set()
     warnings: list[str] = []
+    outcomes: dict[str, list[str] | ProblemException] = {}
     resolve = _cached_resolver(
         resolver or destination_policy.default_resolver,
         max_hosts=settings.max_target_hosts_to_validate,
+        outcomes=outcomes,
     )
     cap_warning_added = False
     for location, raw_url in _iter_request_urls(collection_data.get("item", [])):
@@ -118,4 +124,12 @@ def extract_target_domains(
             warnings.append(f"'{location}': {exc.detail}")
         else:
             resolved.add(host)
-    return DomainReport(resolved_domains=sorted(resolved), warnings=warnings)
+    pinned = {
+        host: sorted(a for a in answer if destination_policy.is_ip_literal(a))
+        for host in resolved
+        if isinstance(answer := outcomes.get(host), list)
+    }
+    return DomainReport(
+        resolved_domains=sorted(resolved), warnings=warnings,
+        pinned_addresses={host: addrs for host, addrs in pinned.items() if addrs},
+    )

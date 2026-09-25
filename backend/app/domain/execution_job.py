@@ -46,6 +46,9 @@ class RunInput:
     `collection_data` / `environment_data`; the merged collection <
     environment < supplied map is used only for destination validation and
     redaction and never reaches the runner.
+
+    `host_pins` maps each destination-validated hostname to the exact
+    addresses that were checked; the Docker runner pins only these.
     """
 
     collection_data: dict
@@ -53,6 +56,9 @@ class RunInput:
     supplied_values: dict[str, str]
     folder_id: str | None
     timeout_seconds: int
+    # Validated hostname -> addresses (from destination validation). The Docker
+    # runner pins exactly these into the container's /etc/hosts.
+    host_pins: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass
