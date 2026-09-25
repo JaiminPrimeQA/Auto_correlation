@@ -104,3 +104,16 @@ def test_only_searches_later_requests():
     ])
     prod = next(e for e in run.executions if e.item_name == "Prod")
     assert _find(run, prod.id, "json_body", "$.v") == []
+
+
+def test_does_not_offer_headers_the_generated_plan_does_not_send():
+    ua = "PostmanRuntime/7.39.1"
+    run = _run([
+        b.execution("Open", "GET", "https://echo.test/get",
+                    resp_body={"headers": {"user-agent": ua}}, position=0),
+        b.execution("Use", "GET", "https://echo.test/headers",
+                    req_headers=[b.header("User-Agent", ua)], position=1),
+    ])
+    consumers = _find(run, run.executions[0].id, "json_body", "$.headers['user-agent']")
+    assert consumers is not None
+    assert [sink for _, sink, _ in consumers if (sink.key or "").lower() == "user-agent"] == []

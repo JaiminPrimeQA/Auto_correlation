@@ -15,6 +15,7 @@ from ..domain.enums import ExtractorMethod, LocationType
 from ..domain.models import NormalizedExecution, NormalizedRun, ValueOccurrence
 from ..utils.naming import fields_are_equivalent, is_placeholder_value, normalize_field_name
 from .correlation_engine import _extractor_for, _match_consumer
+from .header_policy import is_correlation_target
 from .value_indexer import index_request_sinks, index_response_sources
 
 # Detects an array index greater than zero, e.g. "$[3].merchantGUID". The
@@ -52,7 +53,7 @@ def find_consumers(
     for e in run.executions:
         if e.original_index <= producer_exec.original_index:
             continue  # producer must precede consumer
-        for sink in index_request_sinks(e):
+        for sink in filter(is_correlation_target, index_request_sinks(e)):
             matched, wrapper = _match_consumer(value, sink)
             if matched:
                 out.append((e, sink, wrapper))
@@ -91,7 +92,7 @@ def find_alias_consumers(
     for e in run.executions:
         if e.original_index <= producer_exec.original_index:
             continue  # producer must precede consumer
-        for sink in index_request_sinks(e):
+        for sink in filter(is_correlation_target, index_request_sinks(e)):
             if not fields_are_equivalent(p_name, _field_name(sink)):
                 continue
             sv = sink.raw_value
@@ -124,7 +125,7 @@ def find_name_matches(
     for e in run.executions:
         if e.original_index <= producer_exec.original_index:
             continue
-        for sink in index_request_sinks(e):
+        for sink in filter(is_correlation_target, index_request_sinks(e)):
             if sink.raw_value == value:
                 continue  # exact-value match is handled by find_consumers
             c_name = _field_name(sink)

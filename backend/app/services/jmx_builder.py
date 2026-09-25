@@ -26,21 +26,12 @@ from ..domain.models import (
 from ..utils.masking import is_sensitive_key
 from ..utils.naming import sanitize_variable_name
 from ..utils.xml import to_string
+from .header_policy import NON_REPLAYED_HEADERS
 from .jsonpath_support import jsonpath_values, scalar_text
 from .run_aligner import align_runs
 
-# Transport/runtime headers that must never be replayed verbatim. JMeter/its
-# HTTP client recomputes Content-Length/Host; the Cookie Manager owns cookies;
-# Postman-Token and Accept-Encoding are client runtime noise.
-_EXCLUDED_HEADERS = {
-    "content-length",
-    "connection",
-    "host",
-    "transfer-encoding",
-    "cookie",
-    "postman-token",
-    "accept-encoding",
-}
+# See header_policy: shared with everything that proposes correlation targets.
+_EXCLUDED_HEADERS = set(NON_REPLAYED_HEADERS)
 
 
 @dataclass

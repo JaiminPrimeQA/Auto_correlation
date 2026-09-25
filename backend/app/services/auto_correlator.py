@@ -23,6 +23,7 @@ from ..utils.naming import (
 )
 from .consumer_finder import _field_name, is_correlatable_source
 from .correlation_engine import _extractor_for, _is_excluded, _match_consumer, _response_usable
+from .header_policy import is_correlation_target
 from .value_indexer import index_request_sinks, index_response_sources
 
 _ARRAY_ROW = re.compile(r"^(.*)\[(\d+)\](?:\.[A-Za-z_]\w*|\['[^']*'\])$")
@@ -62,7 +63,7 @@ def auto_correlate(run: NormalizedRun, settings: Settings) -> list[CorrelationRu
         # Resolve concrete values first, including short identifiers under an
         # equivalent name. Those selections may disambiguate another field in
         # the SAME request, but can never affect an earlier request.
-        for sink in index_request_sinks(execution):
+        for sink in filter(is_correlation_target, index_request_sinks(execution)):
             candidates = []
             for src in sources:
                 matched, wrapper = _match_consumer(src.raw_value, sink)

@@ -51,3 +51,26 @@ def test_skips_ambiguous_value_appearing_twice_in_response():
 
 def auto_correlate_paths(run):
     return {r.producer.canonical_path for r in auto_correlator.auto_correlate(run, Settings())}
+
+
+def _echo_flow(session: str):
+    """postman-echo style: the response echoes the request's own headers back."""
+    ua = "PostmanRuntime/7.39.1"
+    return [
+        b.execution("Open", "GET", f"https://echo.test/get?session={session}",
+                    req_headers=[b.header("Host", "echo.test"), b.header("User-Agent", ua)],
+                    resp_body={"args": {"session": session},
+                               "headers": {"host": "echo.test", "user-agent": ua, "accept-encoding": "gzip"}},
+                    position=0),
+        b.execution("Use", "GET", "https://echo.test/headers",
+                    req_headers=[b.header("Host", "echo.test"), b.header("User-Agent", ua),
+                                 b.header("Accept-Encoding", "gzip"), b.header("X-Session", session)],
+                    position=1),
+    ]
+
+
+def test_never_targets_headers_the_generated_plan_does_not_send():
+    rules = auto_correlator.auto_correlate(_run(_echo_flow("SESS-4f2a9c71")), Settings())
+    consumer_headers = {(c.key or c.canonical_path).lower() for r in rules for c in r.consumers}
+    assert "x-session" in consumer_headers
+    assert not consumer_headers & {"host", "user-agent", "accept-encoding"}
