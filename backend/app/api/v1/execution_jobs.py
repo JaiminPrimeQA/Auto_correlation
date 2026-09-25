@@ -13,6 +13,7 @@ import json
 from fastapi import APIRouter, Depends, File, Form, Header, UploadFile
 from starlette.concurrency import run_in_threadpool
 
+from ...core import metrics
 from ...core.config import Settings, get_settings
 from ...core.errors import service_unavailable, validation_error
 from ...core.logging import get_logger
@@ -182,6 +183,7 @@ async def create_execution_job(
             folder_id=folder_id,
         )
         await run_in_threadpool(launcher.launch, job.id, material)
+        metrics.emit("JobsCreated", 1, unit="Count", backend=settings.job_backend)
 
     log.info(
         "execution job created",
@@ -218,6 +220,7 @@ async def delete_execution_job(
 
     def _cancel_if_active(fresh: ExecutionJob) -> None:
         nonlocal cancelled
+        cancelled = False
         if fresh.is_active:
             fresh.cancel_requested = True
             fresh.state = ExecutionJobState.CANCELLED
@@ -230,6 +233,8 @@ async def delete_execution_job(
     # job). `mutate` returns None if the job is already gone/expired, in
     # which case there is nothing left to cancel or delete.
     result = job_store.mutate(job.id, _cancel_if_active)
+    if cancelled:
+        metrics.emit("JobsCompleted", 1, unit="Count", outcome="cancelled", error_code="none")
     if result is not None and not cancelled and not result.worker_active:
         # The job was already terminal (or became terminal before the
         # mutate ran) - nothing to cancel, so remove it outright. A terminal

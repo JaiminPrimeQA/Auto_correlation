@@ -14,6 +14,7 @@ import re
 import time
 from collections.abc import Callable
 
+from ..core import metrics
 from ..core.config import Settings
 from ..core.errors import ProblemException, validation_error
 from ..core.logging import get_logger
@@ -196,14 +197,18 @@ def _write_state(
     nothing was written at all).
     """
     written = False
+    finished = False  # this write moved the job into a terminal state
 
     def _apply(fresh: ExecutionJob) -> None:
-        nonlocal written
+        nonlocal written, finished
+        # A persistent store may call this again after a conflicting write.
+        written = finished = False
         if not fresh.is_active:
             return
         if fresh.cancel_requested:
             fresh.state = ExecutionJobState.CANCELLED
             fresh.stage_history.append(ExecutionJobState.CANCELLED.value)
+            finished = True
             return
         fresh.state = state
         fresh.stage_history.append(state.value)
@@ -216,8 +221,14 @@ def _write_state(
         if analysis_id is not None:
             fresh.analysis_id = analysis_id
         written = True
+        finished = not fresh.is_active
 
     result = store.mutate(job_id, _apply)
+    if result is not None and finished:
+        metrics.emit(
+            "JobsCompleted", 1, unit="Count",
+            outcome=result.state.value, error_code=result.error_code or "none",
+        )
     return result is not None and written
 
 
@@ -278,9 +289,11 @@ def _run_stage(
     """
     if not _write_state(job_id, store, stage):
         return None
+    started = time.monotonic()
     outcome = _run_safely(
         runner, make_run_input(), _cancellation_probe(job_id, store), job_id=job_id, stage=stage.value,
     )
+    metrics.emit("RunDurationSeconds", round(time.monotonic() - started, 3), unit="Seconds", stage=stage.value)
     if outcome is None:
         _write_state(
             job_id, store, ExecutionJobState.FAILED,

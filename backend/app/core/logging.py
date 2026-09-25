@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 import time
 import uuid
@@ -14,8 +15,13 @@ from ..utils.masking import redact_for_log
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 
 
-def new_request_id() -> str:
-    rid = uuid.uuid4().hex[:12]
+_VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
+
+
+def new_request_id(incoming: str | None = None) -> str:
+    """Use the caller's X-Request-ID when it is a plain token (so a load
+    balancer's or client's id links logs end to end), else a fresh one."""
+    rid = incoming if incoming and _VALID_REQUEST_ID.match(incoming) else uuid.uuid4().hex[:12]
     _request_id.set(rid)
     return rid
 

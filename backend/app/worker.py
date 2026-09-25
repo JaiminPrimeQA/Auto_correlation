@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
+from .core import metrics
 from .core.config import Settings, get_settings
 from .core.logging import configure_logging, get_logger
 from .domain.execution_job import ExecutionJob, ExecutionJobState, NewmanRunner
@@ -93,6 +95,7 @@ class Worker:
             self._discard(message)
             return
         material = RunMaterial.from_document(document)
+        metrics.emit("QueueWaitSeconds", round(max(0.0, time.time() - message.enqueued_at), 3), unit="Seconds")
         log.info("job picked up", extra={"stage": "worker", "job_id": job_id, "count": message.receive_count})
         execution_job_service.run_job(
             job_id,

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .api.deps import get_principal
 from .api.v1 import analyses, downloads, execution_jobs, rules
-from .core.config import get_settings
+from .core.config import Settings, get_settings
 from .core.errors import (
     ProblemException,
     problem_exception_handler,
@@ -19,10 +21,33 @@ from .core.logging import configure_logging, get_logger, new_request_id
 log = get_logger("app")
 
 
+def dependency_checks(settings: Settings) -> dict[str, bool]:
+    """Reachability of what the API needs; nothing to check locally."""
+    if settings.job_backend != "aws":
+        return {}
+    from .api import deps
+
+    checks: dict[str, bool] = {}
+    probes = {
+        "job_store": lambda: deps.get_job_store().get("readiness-probe"),
+        "queue": lambda: deps.get_job_queue().ping(),
+        "bucket": lambda: deps.get_object_store().get_bytes("readiness-probe", max_bytes=1),
+    }
+    for name, probe in probes.items():
+        try:
+            probe()
+            checks[name] = True
+        except Exception:  # noqa: BLE001 - reported as not ready, details stay in logs
+            log.warning(f"readiness check failed: {name}", extra={"stage": "ready"})
+            checks[name] = False
+    return checks
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        new_request_id()
+        rid = new_request_id(request.headers.get("X-Request-ID"))
         response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -65,6 +90,15 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["meta"])
     async def health() -> dict:
         return {"status": "ok", "app": settings.app_name, "version": "0.1.0"}
+
+    @app.get("/health/ready", tags=["meta"])
+    async def ready() -> JSONResponse:
+        checks = await run_in_threadpool(dependency_checks, get_settings())
+        ok = all(checks.values())
+        return JSONResponse(
+            status_code=200 if ok else 503,
+            content={"status": "ready" if ok else "not_ready", "checks": checks},
+        )
 
     return app
 
