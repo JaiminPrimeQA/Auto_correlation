@@ -48,6 +48,19 @@ describe("AuthGate", () => {
     expect(await screen.findByText("finishing sign-in")).toBeInTheDocument();
   });
 
+  it("re-checks the user after the sign-in callback navigates back into the app", async () => {
+    m.isAuthEnabled.mockReturnValue(true);
+    m.getCurrentUser.mockResolvedValue(null); // callback page: sign-in not finished yet
+    nav.pathname = "/auth/callback";
+    const { rerender } = render(<AuthGate><p>app content</p></AuthGate>);
+
+    m.getCurrentUser.mockResolvedValue({ name: "alice" }); // code exchanged, user stored
+    nav.pathname = "/";
+    rerender(<AuthGate><p>app content</p></AuthGate>);
+    expect(await screen.findByText("app content")).toBeInTheDocument();
+    expect(screen.getByText("alice")).toBeInTheDocument();
+  });
+
   it("shows the app and who is signed in, with sign out", async () => {
     m.isAuthEnabled.mockReturnValue(true);
     m.getCurrentUser.mockResolvedValue({ name: "alice@example.com" });

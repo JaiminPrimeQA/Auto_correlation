@@ -13,6 +13,10 @@ ARG NEXT_PUBLIC_OIDC_AUTHORITY=""
 ARG NEXT_PUBLIC_OIDC_CLIENT_ID=""
 ARG NEXT_PUBLIC_OIDC_SCOPE="openid profile email"
 ARG NEXT_PUBLIC_OIDC_AUDIENCE=""
+# Next.js compiles the /api proxy rewrite at build time. Behind the AWS load
+# balancer /api never reaches this container, so the default is irrelevant there.
+ARG BACKEND_URL="http://127.0.0.1:8000"
+ENV BACKEND_URL=${BACKEND_URL}
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-alpine
@@ -23,6 +27,5 @@ COPY --from=build --chown=node:node /web/node_modules ./node_modules
 COPY --from=build --chown=node:node /web/.next ./.next
 USER node
 EXPOSE 3000
-# In AWS the load balancer sends /api/* to the API service directly;
-# BACKEND_URL only matters when this container proxies /api itself.
+# In AWS the load balancer sends /api/* to the API service directly.
 CMD ["node_modules/.bin/next", "start", "-p", "3000"]

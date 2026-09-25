@@ -17,16 +17,21 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   );
   const pathname = usePathname();
 
+  // Re-checked on every route change: the sign-in callback stores the user
+  // and then navigates client-side, so a check made once on first mount (on
+  // the callback page, before the code exchange) would stay "anonymous".
   useEffect(() => {
-    if (!isAuthEnabled()) {
-      setStatus({ kind: "signed-in", name: null });
-      return;
-    }
+    if (!isAuthEnabled()) return;
     setTokenProvider(getAccessToken);
+    if (pathname === CALLBACK_PATH) return;
+    let current = true;
     getCurrentUser()
-      .then((user) => setStatus(user ? { kind: "signed-in", name: user.name } : { kind: "anonymous" }))
-      .catch(() => setStatus({ kind: "anonymous" }));
-  }, []);
+      .then((user) => current && setStatus(user ? { kind: "signed-in", name: user.name } : { kind: "anonymous" }))
+      .catch(() => current && setStatus({ kind: "anonymous" }));
+    return () => {
+      current = false;
+    };
+  }, [pathname]);
 
   // The sign-in callback must run before anyone is signed in.
   if (pathname === CALLBACK_PATH) return <>{children}</>;
