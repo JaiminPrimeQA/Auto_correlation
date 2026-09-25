@@ -3,8 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = path.join(__dirname, "..");
-// Migrated in Task 13; DependencyGraph.tsx is excluded from the guard until then.
-const PENDING = ["components/DependencyGraph.tsx"];
+const PENDING: string[] = [];
 const LEGACY = /\b(?:text|bg|border|ring|fill|stroke|divide|placeholder|from|to)-(?:slate-\d+|ink|panel|edge|brand|amber-\d+|white|black)(?:\/\d+)?\b/g;
 const DASH = /[—–]/;
 
@@ -31,5 +30,10 @@ describe("migrated UI", () => {
     const src = readFileSync(path.join(ROOT, rel), "utf8");
     const lines = src.split("\n").filter((l) => DASH.test(l) && !l.trim().startsWith("//") && !l.trim().startsWith("*"));
     expect(lines).toEqual([]);
+  });
+
+  it("DependencyGraph has no hard-coded hex colours", () => {
+    const src = readFileSync(path.join(ROOT, "components", "DependencyGraph.tsx"), "utf8");
+    expect(src.match(/#[0-9a-fA-F]{6}\b/g) ?? []).toEqual([]);
   });
 });
