@@ -22,6 +22,8 @@ function choose(label: RegExp, file: File) {
 describe("FilesStep", () => {
   it("cannot inspect until a collection is chosen", () => {
     render(<FilesStep onInspected={() => {}} />);
+    expect(screen.getByRole("button", { name: /how we handle your data/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /turn a postman collection into a correlated jmeter plan/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /inspect collection/i })).toBeDisabled();
   });
 
