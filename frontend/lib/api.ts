@@ -294,17 +294,40 @@ function parseBody(text: string): unknown {
   }
 }
 
+// Supplies the signed-in user's access token (see lib/auth.ts); null when
+// sign-in is not configured.
+type TokenProvider = () => Promise<string | null>;
+let tokenProvider: TokenProvider | null = null;
+
+export function setTokenProvider(provider: TokenProvider | null): void {
+  tokenProvider = provider;
+}
+
+async function authorizedFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  const token = tokenProvider ? await tokenProvider() : null;
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(`${BASE}${path}`, { ...init, headers });
+}
+
+function problemError(res: Response, data: unknown): ApiError {
+  const err = data as Partial<ProblemError>;
+  const detail = err.detail || err.code || `Request failed (${res.status})`;
+  const sub = (err.errors || []).map((e) => e.detail).join("; ");
+  return new ApiError(sub ? `${detail}: ${sub}` : detail, res.status, err.code ?? null);
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, init);
+  const res = await authorizedFetch(path, init);
   if (res.status === 204) return undefined as T;
   const data = parseBody(await res.text());
-  if (!res.ok) {
-    const err = data as Partial<ProblemError>;
-    const detail = err.detail || err.code || `Request failed (${res.status})`;
-    const sub = (err.errors || []).map((e) => e.detail).join("; ");
-    throw new ApiError(sub ? `${detail}: ${sub}` : detail, res.status, err.code ?? null);
-  }
+  if (!res.ok) throw problemError(res, data);
   return data as T;
+}
+
+function filenameFrom(disposition: string | null, fallback: string): string {
+  const match = disposition?.match(/filename="?([^";]+)"?/i);
+  return match ? match[1] : fallback;
 }
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -315,13 +338,17 @@ function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  async createAnalysis(files: File[]): Promise<AnalysisSummary> {
+  createAnalysis(files: File[]): Promise<AnalysisSummary> {
     const form = new FormData();
     files.forEach((f) => form.append("files", f, f.name));
-    const res = await fetch(`${BASE}/analyses`, { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Upload failed");
-    return data;
+    return send<AnalysisSummary>("/analyses", { method: "POST", body: form });
+  },
+  /** Authenticated file download (a bare <a href> cannot carry the token). */
+  async download(id: string, kind: "jmx" | "manifest"): Promise<{ blob: Blob; filename: string }> {
+    const res = await authorizedFetch(`/analyses/${id}/download/${kind}`);
+    if (!res.ok) throw problemError(res, parseBody(await res.text()));
+    const fallback = kind === "jmx" ? "correlated.jmx" : "manifest.json";
+    return { blob: await res.blob(), filename: filenameFrom(res.headers.get("Content-Disposition"), fallback) };
   },
   inspectCollection(collection: File, environment?: File | null): Promise<CollectionInspection> {
     const form = new FormData();
@@ -423,6 +450,4 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ properties }),
     }),
-  downloadUrl: (id: string, kind: "jmx" | "manifest") =>
-    `${BASE}/analyses/${id}/download/${kind}`,
 };

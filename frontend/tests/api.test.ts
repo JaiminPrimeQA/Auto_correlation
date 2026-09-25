@@ -51,7 +51,7 @@ describe("createExecutionJob", () => {
     expect(job.job_id).toBe("j1");
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/v1/execution-jobs");
-    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBe("attempt-1");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe("attempt-1");
     const form = init.body as FormData;
     expect(form.get("confirm")).toBe("true");
     expect(form.get("folder_id")).toBe("auth");

@@ -3,6 +3,21 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 
+// Authenticated download: fetch with the bearer token, then save the blob.
+async function saveDownload(analysisId: string, kind: "jmx" | "manifest") {
+  try {
+    const { blob, filename } = await api.download(analysisId, kind);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+  }
+}
+
 export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string; ruleCount: number }) {
   const [opts, setOpts] = useState({
     num_threads: 1,
@@ -179,12 +194,12 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
             </div>
           )}
           <div className="flex gap-2 pt-1">
-            <a className="btn" href={api.downloadUrl(analysisId, "jmx")} download>
+            <button className="btn" onClick={() => saveDownload(analysisId, "jmx")}>
               Download Generated JMX
-            </a>
-            <a className="btn-ghost" href={api.downloadUrl(analysisId, "manifest")} download>
+            </button>
+            <button className="btn-ghost" onClick={() => saveDownload(analysisId, "manifest")}>
               Download manifest
-            </a>
+            </button>
           </div>
 
           {/* Validate with real JMeter 5.6.3 */}
