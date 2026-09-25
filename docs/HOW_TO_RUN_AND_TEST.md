@@ -13,8 +13,9 @@ and **re-use** it in later requests. This is called *correlation*.
 
 Baseline11 does this for you:
 
-1. It gets **two runs** of the same Postman flow, either you upload two Newman JSON reports,
-   or you upload a Postman collection and the tool runs it twice for you (inside Docker).
+1. It gets **two runs** of the same Postman flow: you upload a Postman collection and the tool
+   runs it twice for you (inside Docker). Two existing Newman JSON reports can also be sent
+   straight to the API.
 2. It compares both runs, finds which values were produced by one response and re-used by a
    later request, and proposes correlation rules.
 3. It generates a **JMeter 5.6.3 test plan (`.jmx`)** with the extractors already in place, and
@@ -28,7 +29,7 @@ Baseline11 does this for you:
 |------|---------|-----------|
 | Python | 3.12 or newer (Windows: use the `py` launcher) | Backend API |
 | Node.js | 22 or newer (npm included) | Frontend web app |
-| Docker Desktop | running | Only for "Run a Postman collection" |
+| Docker Desktop | running | Running the collection twice (the main flow) |
 | Java | 17 or newer | Only for "Validate with JMeter" |
 | Git | any | Getting the code |
 
@@ -53,7 +54,7 @@ cd frontend
 npm install
 cd ..
 
-# Newman image for "Run a Postman collection" (Docker Desktop must be running)
+# Newman image that runs your collection (Docker Desktop must be running)
 docker build -t baseline11/newman:6.2.2 docker/newman
 ```
 
@@ -76,7 +77,7 @@ You need **two terminals**, and both must stay open.
 
 ```powershell
 cd Auto_correlation\backend
-$env:B11_NEWMAN_RUNNER = "docker"      # enables "Run a Postman collection"; omit if no Docker
+$env:B11_NEWMAN_RUNNER = "docker"      # lets the app run your collection; needs Docker
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -177,7 +178,7 @@ secret `api_key`).
 | In Test D, leave a required variable empty | You cannot start the run until it is filled in. |
 | Click **Run collection twice** several times quickly | Only **one** job starts. |
 | After Test D, search the downloaded JMX for `password123` | It does not appear. Secret body fields (password, client_secret, api_key) and secret headers become `${__P(name,)}` properties. |
-| Upload two runs where every request failed (e.g. all 401) | Run health says *not ready*; the tool does not claim a successful correlation. |
+| Run a collection where every request fails (e.g. all 401), or send two such reports to `POST /api/v1/analyses` | Run health says *not ready*; the tool does not claim a successful correlation. |
 | Open **How we handle your data** under the upload and check the four facts | It expands to show: files and typed values are memory-only, each run's workspace is deleted when the run ends, results expire after 30 minutes and "New analysis" deletes them immediately, and secrets are hidden as typed, never logged and never written into the JMX. |
 
 ---
@@ -214,13 +215,13 @@ runner, Docker images, Terraform checks and a JMeter smoke test.
 
 | Problem | Fix |
 |---------|-----|
-| "Run a Postman collection" answers *503* / execution disabled | Start the backend with `B11_NEWMAN_RUNNER=docker` and make sure Docker Desktop is running. |
+| **Inspect collection** or **Run collection twice** answers *503* / execution disabled | Start the backend with `B11_NEWMAN_RUNNER=docker` and make sure Docker Desktop is running. |
 | Job fails immediately with a Docker/image error | Build the image: `docker build -t baseline11/newman:6.2.2 docker/newman`. |
 | "JMeter is not available on this host" | Run `bash scripts/provision_jmeter.sh .jmeter` or set `B11_JMETER_HOME`. |
 | Port 3000 or 8000 already in use | Another copy is running. Close it, or use another port (`uvicorn ... --port 8010`, and `.\node_modules\.bin\next dev -p 3010` with `$env:BACKEND_URL="http://127.0.0.1:8010"`). |
 | `python` is not recognised | On Windows use `py` or the venv path `.\backend\.venv\Scripts\python.exe`. |
 | My earlier analysis disappeared | Analyses are kept in memory for 30 minutes and are lost when the backend restarts. Upload again. |
-| Collection that calls `localhost` / `127.0.0.1` fails | By design. The collection runs inside an isolated container and private addresses are blocked. Use a publicly reachable test API, or upload Newman reports you recorded yourself (Test A). |
+| Collection that calls `localhost` / `127.0.0.1` fails | By design. The collection runs inside an isolated container and private addresses are blocked. Use a publicly reachable test API, or send Newman reports you recorded yourself to the API (Test A). |
 
 ---
 

@@ -20,7 +20,10 @@ for (const theme of ["light", "dark"]) {
     ...(reducedMotion ? { reducedMotion } : {}),
   });
   const page = await ctx.newPage();
-  await page.goto(base);
+  // Wait until React has hydrated: a screenshot hides the caret by adding an
+  // inline caret-color style to inputs, and doing that to server-rendered HTML
+  // before hydration makes React report a (test-only) hydration mismatch.
+  await page.goto(base, { waitUntil: "networkidle" });
   const suffix = reducedMotion ? "-reduced-motion" : "";
   await page.screenshot({ path: path.join(OUT, `${theme}-1-files${suffix}.png`), fullPage: true });
   await page.getByLabel("Collection file").setInputFiles(path.join(FIX, "booking-flow.postman_collection.json"));
