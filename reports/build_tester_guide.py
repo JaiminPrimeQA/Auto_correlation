@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 
 from docx import Document
@@ -10,15 +11,19 @@ from docx.shared import Inches, Pt, RGBColor
 from PIL import Image
 
 
-ROOT = Path(r"D:\Auto_correlation")
+ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "reports" / "Baseline11_Auto_Correlation_Tester_Guide.docx"
-SCREENSHOTS = [
-    Path(r"C:\Users\Almas\AppData\Local\Temp\codex-clipboard-89d30d80-0bc6-46e5-85fe-1e4669c390cc.png"),
-    Path(r"C:\Users\Almas\AppData\Local\Temp\codex-clipboard-88533f9a-e708-490d-94fd-9deb54fab61d.png"),
-    Path(r"C:\Users\Almas\AppData\Local\Temp\codex-clipboard-54d5a5f1-011a-4ca9-ae22-610273dc36d2.png"),
-]
 ASSET_DIR = ROOT / "reports" / "assets"
+SCREENSHOTS = [
+    ASSET_DIR / "run-health.png",
+    ASSET_DIR / "candidates.png",
+    ASSET_DIR / "generate-source.png",
+]
 GENERATE_CROP = ASSET_DIR / "generate-and-validate.png"
+# Captured by frontend/scripts/capture-guide-screenshots.mjs.
+WIZARD = {name: ASSET_DIR / f"wizard-{name}.png" for name in (
+    "0-mode", "1-files", "2-variables", "3-review", "4-progress", "5-results", "6-failure",
+)}
 
 BLUE = "17365D"
 LIGHT_BLUE = "EAF2F8"
@@ -172,6 +177,34 @@ def add_caption(doc, text):
     run.font.color.rgb = GRAY
 
 
+def crop_to_content(path):
+    """Trim the empty page background below the UI; ignore the dev-mode badge at bottom-left."""
+    with Image.open(path) as source:
+        image = source.convert("RGB")
+    width, height = image.size
+    background = image.getpixel((width - 1, height - 1))
+    bottom = height
+    for y in range(height - 1, 0, -1):
+        row = [image.getpixel((x, y)) for x in range(80, width, 4)]
+        if any(sum(abs(a - b) for a, b in zip(px, background)) > 24 for px in row):
+            bottom = min(height, y + 24)
+            break
+    buffer = io.BytesIO()
+    image.crop((0, 0, width, bottom)).save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
+
+def add_figure(doc, path, width, descr, caption):
+    if not path.exists():
+        return
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    picture = p.add_run().add_picture(crop_to_content(path), width=Inches(width))
+    picture._inline.docPr.set("descr", descr)
+    add_caption(doc, caption)
+
+
 def add_page_number(paragraph):
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = paragraph.add_run()
@@ -220,6 +253,7 @@ for name, size, before, after in (
     style.paragraph_format.space_before = Pt(before)
     style.paragraph_format.space_after = Pt(after)
     style.paragraph_format.keep_with_next = True
+    style.paragraph_format.page_break_before = name == "Heading 1"
 
 # Some Word installations add a theme border to the built-in Title style.
 # Remove it so the title is separated by whitespace only.
@@ -253,7 +287,7 @@ intro = doc.add_paragraph()
 intro.paragraph_format.space_after = Pt(14)
 intro.add_run("Purpose. ").bold = True
 intro.add_run(
-    "This guide explains how a tester uses Baseline11 Auto Correlate to execute a working Postman collection twice with Newman, upload the resulting JSON reports, confirm dynamic producer and consumer relationships, generate a correlated JMX, and validate it with Apache JMeter."
+    "This guide explains how a tester uses Baseline11 Auto Correlate to run a working Postman collection twice, confirm dynamic producer and consumer relationships, generate a correlated JMX, and validate it with Apache JMeter. Baseline11 can run the collection itself in isolated Newman containers (recommended), or accept two Newman JSON reports the tester already captured (advanced)."
 )
 
 conclusion = doc.add_paragraph()
@@ -266,38 +300,42 @@ conclusion.add_run(
 add_table(
     doc,
     ["Document", "Audience", "Version", "Date"],
-    [["Operating guide", "API, QA and performance testers", "1.0", "23 September 2026"]],
+    [["Operating guide", "API, QA and performance testers", "2.0", "25 September 2026"]],
     [1.35, 2.45, 0.75, 1.55],
 )
 
 doc.add_paragraph("What the tester needs", style="Heading 2")
 for item in [
-    "A Postman collection that already executes successfully.",
+    "A Postman collection that already executes successfully against public HTTPS endpoints.",
     "A Postman environment or another safe source for host and credential values.",
-    "Newman and the optional htmlextra reporter.",
-    "Two successful Newman JSON reports from the same collection and request order.",
     "Access to the Baseline11 Auto Correlate web application and Apache JMeter 5.6.3.",
+    "Advanced mode only: Newman and two successful Newman JSON reports from the same collection and request order.",
 ]:
     add_bullet(doc, item)
 
-doc.add_page_break()
 
 # Quick start
 doc.add_heading("Quick Start", level=1)
 doc.add_paragraph(
     "Use this page when the collection, environment and credentials are already prepared. The detailed procedure begins on the next page."
 )
+doc.add_heading("Recommended: let Baseline11 run the collection", level=2)
 quick_rows = [
-    ("1", "Verify the collection", "Run the selected folder in Postman or Newman and confirm that producer requests succeed."),
-    ("2", "Create baseline", "Run Newman and export baseline.json."),
-    ("3", "Create comparison", "Run the same command again and export comparison.json."),
-    ("4", "Upload", "Upload baseline first and comparison second."),
-    ("5", "Review", "Confirm healthy runs, aligned requests and the expected candidate."),
-    ("6", "Correlate", "Click Auto correlate all reused values once."),
+    ("1", "Choose mode", "Select Run a Postman collection."),
+    ("2", "Upload files", "Add the collection and, optionally, its environment, then click Inspect collection. Nothing is sent to any API yet."),
+    ("3", "Supply variables", "Enter any values the collection needs that are not in the environment. Secrets stay hidden."),
+    ("4", "Review scope", "Pick the whole collection or one folder, check the target domains, then click Run collection twice."),
+    ("5", "Wait", "Baseline11 runs the collection twice in isolated Newman containers and opens the analysis."),
+    ("6", "Correlate", "Check Run Health, then click Auto correlate all reused values once."),
     ("7", "Generate", "Preview, generate and download the JMX and manifest."),
     ("8", "Validate", "Supply runtime secrets and execute the plan with JMeter 5.6.3."),
 ]
 add_table(doc, ["Step", "Action", "Expected result"], quick_rows, [0.55, 1.55, 4.05])
+
+doc.add_heading("Advanced: upload two Newman reports", level=2)
+doc.add_paragraph(
+    "Use this mode when the collection must run from a network Baseline11 cannot reach, such as a private test environment. Run Newman twice yourself (section 3), choose Upload existing Newman reports, upload baseline.json first and comparison.json second, then continue from step 6 above."
+)
 
 doc.add_heading("The Core Concept", level=2)
 doc.add_paragraph(
@@ -318,10 +356,101 @@ doc.add_paragraph(
     "A single run can show that a value is reused, but it cannot reliably distinguish a dynamic identifier from static configuration. Two successful runs show that the value changes while the producer response path and consumer request locations remain stable."
 )
 
-doc.add_page_break()
+
+# Run the collection in Baseline11
+doc.add_heading("1 Run a Postman Collection in Baseline11 (Recommended)", level=1)
+doc.add_paragraph(
+    "Baseline11 can execute the collection for you. It inspects the collection first, asks for any missing values, then runs it twice with Newman 6.2.2 in fresh isolated containers from identical starting values. Both reports go through exactly the same analysis as uploaded reports."
+)
+add_figure(
+    doc, WIZARD["0-mode"], 5.6,
+    "Baseline11 start screen offering Run a Postman collection (recommended) or Upload existing Newman reports (advanced)",
+    "Figure 1  Choose Run a Postman collection",
+)
+
+doc.add_heading("Step 1  Files", level=2)
+doc.add_paragraph(
+    "Add the exported collection (.postman_collection.json) and, if the collection uses one, the environment (.postman_environment.json). Click Inspect collection. Inspection reads the files only; no request is sent to any API."
+)
+
+doc.add_heading("Step 2  Variables", level=2)
+doc.add_paragraph(
+    "Baseline11 lists every variable the collection uses and where each one comes from: the environment file, a Postman built-in such as $guid, or a script in the collection that sets it at runtime. Variables with no source must be supplied before the run can start; values are never silently replaced with empty strings. Secret-looking variables are masked and are never written to logs, job status, errors or the generated JMX."
+)
+add_figure(
+    doc, WIZARD["2-variables"], 5.6,
+    "Variables step asking for a hidden api_key and listing three variables already resolved",
+    "Figure 2  Supply missing values; resolved variables show their source",
+)
+
+doc.add_heading("Step 3  Scope and review", level=2)
+doc.add_paragraph(
+    "Pick the whole collection or a single folder, then check the summary: request count, target domains, the values you supplied and the execution limits. Click Run collection twice. Repeated clicks do not start duplicate jobs."
+)
+add_figure(
+    doc, WIZARD["3-review"], 5.6,
+    "Scope and review step showing collection, environment, three requests, target domain postman-echo.com and execution limits",
+    "Figure 3  Confirm what will run before anything is sent",
+)
+add_table(
+    doc,
+    ["Limit", "Value", "Why"],
+    [
+        ("Runs", "2 (baseline and comparison)", "Two runs prove which values are dynamic."),
+        ("Time", "5 minutes per run", "Stops hanging endpoints and runaway scripts."),
+        ("Report size", "25 MiB per run", "Keeps analysis responsive; choose a folder for large collections."),
+        ("Destinations", "Public HTTPS only; redirects not followed", "Blocks localhost, private networks and cloud metadata addresses."),
+        ("Isolation", "Fresh container per run, no host files or credentials", "Collection scripts are untrusted code."),
+    ],
+    [1.2, 2.25, 2.7],
+)
+
+doc.add_heading("Step 4  Execution progress", level=2)
+doc.add_paragraph(
+    "The progress view shows each stage: waiting for a runner, checking destinations, Run A, Run B, and analysis. A run can be cancelled at any time."
+)
+add_figure(
+    doc, WIZARD["4-progress"], 5.6,
+    "Execution progress with runner and destination checks complete and Run A executing",
+    "Figure 4  Two isolated Newman runs, then the standard analysis",
+)
+
+doc.add_heading("Step 5  Analysis results", level=2)
+doc.add_paragraph(
+    "When both runs finish, Baseline11 opens the same analysis screens used for uploaded reports, starting with Run Health. Continue with section 5 to review and accept correlations."
+)
+add_figure(
+    doc, WIZARD["5-results"], 6.2,
+    "Run Health for the executed collection showing readiness ready, one correlation and two healthy runs",
+    "Figure 5  The executed collection opens directly in Run Health",
+)
+
+doc.add_heading("When a run does not complete", level=2)
+doc.add_paragraph(
+    "Failures are shown in the progress view with the reason, the affected request and what to do next. Retry reuses the same inputs; Start over returns to the files step."
+)
+add_figure(
+    doc, WIZARD["6-failure"], 5.6,
+    "Failure panel stating that request Internal admin targets a private IP and was blocked by destination validation",
+    "Figure 6  A blocked private destination, with guidance",
+)
+add_table(
+    doc,
+    ["Code", "Meaning", "Tester action"],
+    [
+        ("destination_validation_failed", "A request targets localhost, a private or metadata IP, or plain HTTP.", "Point host variables at a public HTTPS address, or use advanced mode from inside the network."),
+        ("timeout", "A run exceeded 5 minutes.", "Choose a smaller folder or check for a hanging endpoint."),
+        ("report_too_large", "A run produced a report over 25 MiB.", "Choose a smaller folder."),
+        ("resource_limit", "A run used too much memory or too many processes.", "Try a smaller folder or simplify heavy scripts."),
+        ("runner_unavailable", "The Newman runner is not available.", "Ask the administrator to check the runner service, then retry."),
+        ("analysis_error", "Both runs finished but could not be analysed.", "Check that both runs succeed (mostly 2xx) and retry."),
+    ],
+    [1.85, 2.2, 2.1],
+)
+
 
 # Preparation
-doc.add_heading("1 Prepare the Postman Collection", level=1)
+doc.add_heading("2 Prepare the Postman Collection", level=1)
 doc.add_paragraph(
     "The collection must complete the intended API journey before it is uploaded indirectly through Newman reports. Baseline11 translates an observed working flow into JMeter; it does not repair authentication failures or unresolved Postman placeholders."
 )
@@ -357,10 +486,9 @@ doc.add_paragraph(
     "Keep real keys and secrets in a local environment file. Share only a template with empty values. Confirm that exported environment values are populated before running Newman; some Postman workflows export variable definitions without the local values."
 )
 
-doc.add_page_break()
 
 # Newman
-doc.add_heading("2 Generate Newman Reports", level=1)
+doc.add_heading("3 Generate Newman Reports (Advanced Mode)", level=1)
 doc.add_heading("Install the command line tools", level=2)
 add_code(doc, "npm install -g newman newman-reporter-htmlextra\nnewman --version")
 
@@ -410,12 +538,11 @@ for item in [
 ]:
     add_bullet(doc, item)
 
-doc.add_page_break()
 
 # Upload and review
-doc.add_heading("3 Upload and Review the Analysis", level=1)
+doc.add_heading("4 Upload and Review the Analysis", level=1)
 doc.add_paragraph(
-    "Open Baseline11 and upload baseline.json first and comparison.json second. Do not upload the Postman collection, environment, HTML report or a JMX into the report uploader."
+    "In the recommended mode Baseline11 opens this analysis automatically when both runs finish. In advanced mode, choose Upload existing Newman reports and upload baseline.json first and comparison.json second. Do not upload the Postman collection, environment, HTML report or a JMX into the report uploader."
 )
 
 doc.add_heading("Run Health", level=2)
@@ -427,7 +554,7 @@ if SCREENSHOTS[0].exists():
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     picture = p.add_run().add_picture(str(SCREENSHOTS[0]), width=Inches(6.45))
     picture._inline.docPr.set("descr", "Baseline11 Run Health showing seven aligned successful requests and one reviewable empty dataset warning")
-    add_caption(doc, "Figure 1  Example Run Health with seven aligned HTTP 200 requests")
+    add_caption(doc, "Figure 7  Example Run Health with seven aligned HTTP 200 requests")
 
 doc.add_heading("How to interpret common health results", level=2)
 add_table(
@@ -442,9 +569,8 @@ add_table(
     [1.25, 2.45, 2.45],
 )
 
-doc.add_page_break()
 
-doc.add_heading("4 Review and Accept Correlation", level=1)
+doc.add_heading("5 Review and Accept Correlation", level=1)
 doc.add_paragraph(
     "Candidates are response values that changed between runs and were reused by later requests in both runs. Inspect the producer path, consumer count, confidence and evidence before acceptance."
 )
@@ -453,7 +579,7 @@ if SCREENSHOTS[1].exists():
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     picture = p.add_run().add_picture(str(SCREENSHOTS[1]), width=Inches(6.45))
     picture._inline.docPr.set("descr", "Baseline11 Candidates page showing one high confidence ID value produced at JSONPath id and reused by three requests")
-    add_caption(doc, "Figure 2  One high-confidence ID candidate produced at JSONPath $.id and reused by three requests")
+    add_caption(doc, "Figure 8  One high-confidence ID candidate produced at JSONPath $.id and reused by three requests")
 
 doc.add_heading("Decision rules", level=2)
 add_table(
@@ -479,10 +605,9 @@ doc.add_paragraph(
     "Variable names may be edited for clarity. For example, a response field named id can be renamed from ${id} to ${order_id} when the business meaning is an order identifier."
 )
 
-doc.add_page_break()
 
 # Generate
-doc.add_heading("5 Generate the JMeter Plan", level=1)
+doc.add_heading("6 Generate the JMeter Plan", level=1)
 doc.add_paragraph(
     "Open Generate after accepting the correlation. Use Preview Draft to inspect the planned producer, extractor, variable and consumers before creating the JMX."
 )
@@ -507,7 +632,7 @@ if GENERATE_CROP.exists():
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     picture = p.add_run().add_picture(str(GENERATE_CROP), width=Inches(5.7))
     picture._inline.docPr.set("descr", "Baseline11 Generate page showing one accepted correlation, three downstream substitutions, JMX download, and Authorization validation input")
-    add_caption(doc, "Figure 3  Generated JMX summary and runtime Authorization property required for validation")
+    add_caption(doc, "Figure 9  Generated JMX summary and runtime Authorization property required for validation")
 
 doc.add_heading("What the JMX should contain", level=2)
 for item in [
@@ -519,10 +644,9 @@ for item in [
 ]:
     add_bullet(doc, item)
 
-doc.add_page_break()
 
 # Validation
-doc.add_heading("6 Validate with Apache JMeter 5.6.3", level=1)
+doc.add_heading("7 Validate with Apache JMeter 5.6.3", level=1)
 doc.add_paragraph(
     "Generated means the XML structure is valid. Validated means Apache JMeter executed the plan successfully with the required runtime properties. The web validation form passes secrets only to that execution and does not store them in the JMX."
 )
@@ -568,10 +692,9 @@ for item in [
 ]:
     add_bullet(doc, item)
 
-doc.add_page_break()
 
 # Handoff and security
-doc.add_heading("7 Package the Deliverables", level=1)
+doc.add_heading("8 Package the Deliverables", level=1)
 doc.add_paragraph(
     "Give testers the files needed to reproduce the workflow while separating reusable assets from secrets."
 )
@@ -612,10 +735,9 @@ for item in [
 ]:
     add_bullet(doc, item)
 
-doc.add_page_break()
 
 # Troubleshooting
-doc.add_heading("8 Troubleshooting", level=1)
+doc.add_heading("9 Troubleshooting", level=1)
 add_table(
     doc,
     ["Symptom", "Likely cause", "Corrective action"],
@@ -632,11 +754,12 @@ add_table(
     ],
     [1.6, 2.15, 2.4],
 )
+doc.add_paragraph("For failures of the collection run itself, see the code table in section 1.")
 
 doc.add_heading("Tester completion checklist", level=2)
 checklist = [
-    "[ ] Collection completes successfully in Newman.",
-    "[ ] Baseline and comparison JSON reports were generated from the same scenario.",
+    "[ ] Collection completes successfully (run in Baseline11, or twice in Newman for advanced mode).",
+    "[ ] Both runs came from the same collection, folder and starting values.",
     "[ ] Run Health has no blocker.",
     "[ ] Candidate producer and consumers match the intended business flow.",
     "[ ] Automatic correlation completed once.",
