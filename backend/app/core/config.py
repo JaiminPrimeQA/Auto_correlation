@@ -70,7 +70,28 @@ class Settings(BaseSettings):
     # POST /execution-jobs answer 503 `runner_unavailable` without creating a
     # job; `fake` selects the deterministic canned FakeNewmanRunner (dev/tests
     # only - it never contacts the collection's targets).
-    newman_runner: Literal["disabled", "fake", "docker"] = "disabled"
+    newman_runner: Literal["disabled", "fake", "docker", "ecs"] = "disabled"
+    # Where jobs are stored and executed. `local`: in-memory store + in-process
+    # dispatcher (development). `aws`: DynamoDB store, S3 job material, SQS
+    # queue, and a separate worker that launches Fargate runner tasks.
+    job_backend: Literal["local", "aws"] = "local"
+    aws_region: str | None = None
+    # Only for local testing against moto/LocalStack; never set in AWS.
+    aws_endpoint_url: str | None = None
+    jobs_table: str | None = None
+    material_bucket: str | None = None
+    kms_key_id: str | None = None
+    job_queue_url: str | None = None
+    ecs_cluster: str | None = None
+    runner_task_definition: str | None = None
+    runner_container_name: str = "newman-runner"
+    # Comma-separated ids.
+    runner_subnets: str = ""
+    runner_security_groups: str = ""
+    # Presigned URLs stay valid for the run timeout plus this margin.
+    presign_grace_seconds: int = 300
+    # SQS visibility for one job: two runs plus task start-up and analysis.
+    job_visibility_timeout_seconds: int = 20 * 60
     # --- Docker Newman runner (Phase 3) ---
     # Built from docker/newman/Dockerfile: node:22-alpine + newman@6.2.2, non-root.
     newman_docker_image: str = "baseline11/newman:6.2.2"
@@ -144,6 +165,14 @@ class Settings(BaseSettings):
     @property
     def blocked_hostname_list(self) -> list[str]:
         return [h.strip().lower() for h in self.blocked_hostnames.split(",") if h.strip()]
+
+    @property
+    def runner_subnet_list(self) -> list[str]:
+        return [x.strip() for x in self.runner_subnets.split(",") if x.strip()]
+
+    @property
+    def runner_security_group_list(self) -> list[str]:
+        return [x.strip() for x in self.runner_security_groups.split(",") if x.strip()]
 
     @property
     def oidc_algorithm_list(self) -> tuple[str, ...]:

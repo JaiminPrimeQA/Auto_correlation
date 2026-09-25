@@ -5,6 +5,7 @@ import pytest
 from app.core.errors import ProblemException
 from app.domain.execution_job import ExecutionJob, ExecutionJobState
 from app.repositories.execution_job_store import InMemoryExecutionJobStore
+from tests.fixtures.aws import dynamodb_job_store
 
 
 def _job(id="j1", owner="127.0.0.1", ttl=60, **overrides) -> ExecutionJob:
@@ -14,15 +15,21 @@ def _job(id="j1", owner="127.0.0.1", ttl=60, **overrides) -> ExecutionJob:
     return ExecutionJob(**base)
 
 
-@pytest.fixture
-def store():
-    return InMemoryExecutionJobStore(ttl_seconds=60)
+@pytest.fixture(params=["memory", "dynamodb"])
+def store(request):
+    # Every contract below must hold for both the in-memory store (local
+    # development) and the DynamoDB store (AWS backend, via moto).
+    if request.param == "memory":
+        yield InMemoryExecutionJobStore(ttl_seconds=60)
+    else:
+        with dynamodb_job_store() as dynamo:
+            yield dynamo
 
 
 def test_create_and_get(store):
     job = _job()
     store.create(job)
-    assert store.get("j1") is job
+    assert store.get("j1") == job
 
 
 def test_get_missing_returns_none(store):
@@ -98,7 +105,7 @@ def test_mutate_applies_the_function_and_persists_the_mutation(store):
         j.state = ExecutionJobState.READY
 
     result = store.mutate("j1", _bump)
-    assert result is job
+    assert (result.id, result.state) == ("j1", ExecutionJobState.READY)
     assert store.get("j1").state == ExecutionJobState.READY
 
 
@@ -124,8 +131,8 @@ def test_create_if_allowed_inserts_when_under_cap(store):
     job = _job(id="a", owner="o")
     result, created = store.create_if_allowed(job, window_seconds=600, max_active=2)
     assert created is True
-    assert result is job
-    assert store.get("a") is job
+    assert result == job
+    assert store.get("a") == job
 
 
 def test_create_if_allowed_returns_existing_on_idempotency_hit(store):
@@ -135,7 +142,7 @@ def test_create_if_allowed_returns_existing_on_idempotency_hit(store):
         _job(id="b", owner="o", idempotency_key="k"), window_seconds=600, max_active=2,
     )
     assert created is False
-    assert result is existing
+    assert result == existing
     assert store.get("b") is None
 
 
