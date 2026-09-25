@@ -17,16 +17,21 @@ from ...core.config import Settings, get_settings
 from ...core.errors import service_unavailable, validation_error
 from ...core.logging import get_logger
 from ...domain.execution_job import ExecutionJob, ExecutionJobState
+from ...repositories.analysis_store import SessionStore
 from ...repositories.execution_job_store import ExecutionJobStore
+from ...repositories.s3_object_store import job_prefix
 from ...schemas import presenters
 from ...services import execution_job_service
+from ...services.job_finalizer import finalize_job, needs_finalizing
 from ...services.job_launcher import JobLauncher, RunMaterial
 from ...services.postman_inspector import inspect_collection
 from ..deps import (
     enforce_rate_limit,
     get_job_launcher,
     get_job_store,
+    get_object_store,
     get_owner_key,
+    get_store,
     require_owned_job,
 )
 
@@ -186,7 +191,20 @@ async def create_execution_job(
 
 
 @router.get("/{job_id}")
-async def get_execution_job(job: ExecutionJob = Depends(require_owned_job)) -> dict:
+async def get_execution_job(
+    job: ExecutionJob = Depends(require_owned_job),
+    settings: Settings = Depends(get_settings),
+    job_store: ExecutionJobStore = Depends(get_job_store),
+    analysis_store: SessionStore = Depends(get_store),
+) -> dict:
+    # AWS backend: the worker left both reports in S3; the owner's first poll
+    # builds the analysis here, where analyses live.
+    if needs_finalizing(job):
+        await run_in_threadpool(
+            finalize_job, job.id, store=job_store, objects=get_object_store(),
+            analysis_store=analysis_store, settings=settings,
+        )
+        job = job_store.get(job.id) or job
     return presenters.execution_job_dto(job)
 
 
@@ -194,6 +212,7 @@ async def get_execution_job(job: ExecutionJob = Depends(require_owned_job)) -> d
 async def delete_execution_job(
     job: ExecutionJob = Depends(require_owned_job),
     job_store: ExecutionJobStore = Depends(get_job_store),
+    settings: Settings = Depends(get_settings),
 ) -> None:
     cancelled = False
 
@@ -218,3 +237,5 @@ async def delete_execution_job(
         # finishes: removing it would free the owner's concurrency slot while
         # the worker still runs. A later DELETE, or TTL cleanup, removes it.
         job_store.delete(job.id)
+        if settings.job_backend == "aws":
+            await run_in_threadpool(get_object_store().delete_prefix, job_prefix(job.id))

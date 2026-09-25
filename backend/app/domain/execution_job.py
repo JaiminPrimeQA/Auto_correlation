@@ -107,6 +107,10 @@ class ExecutionJob:
     # worker counts against the owner's concurrency cap even once terminal
     # (e.g. cancelled mid-run), and TTL cleanup never evicts it.
     worker_active: bool = False
+    # AWS backend: the worker stored both reports in S3 for the API to analyse
+    # (the API holds analyses in memory), and when the API claimed that step.
+    reports_ready: bool = False
+    finalizing_since: float | None = None
 
     @property
     def is_active(self) -> bool:

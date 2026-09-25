@@ -70,6 +70,31 @@ def test_idempotent_repeat_enqueues_once(aws_app):
     assert len(messages) == 1
 
 
+def test_full_round_trip_api_worker_api_reaches_ready(aws_app):
+    from app.services.fake_newman_runner import canned_fake_runner
+    from app.worker import Worker
+
+    client, s3, *_ = aws_app
+    job_id = _post(client).json()["job_id"]
+    worker = Worker(settings=get_settings(), queue=deps.get_job_queue(), job_store=deps.get_job_store(),
+                    objects=deps.get_object_store(), runner=canned_fake_runner(), receive_wait_seconds=0)
+    assert worker.process_one() is True
+
+    status = client.get(f"/api/v1/execution-jobs/{job_id}").json()
+    assert status["state"] == "ready", status
+    assert status["stage_history"] == ["validating", "running_baseline", "running_comparison", "analyzing", "ready"]
+    assert client.get(f"/api/v1/analyses/{status['analysis_id']}").status_code == 200
+    assert s3.list_objects_v2(Bucket=BUCKET).get("Contents") is None  # material and reports removed
+
+
+def test_deleting_a_queued_job_removes_its_material(aws_app):
+    client, s3, *_ = aws_app
+    job_id = _post(client).json()["job_id"]
+    assert client.delete(f"/api/v1/execution-jobs/{job_id}").status_code == 204  # cancels
+    assert client.delete(f"/api/v1/execution-jobs/{job_id}").status_code == 204  # removes
+    assert s3.list_objects_v2(Bucket=BUCKET).get("Contents") is None
+
+
 def test_create_works_without_a_local_newman_runner(aws_app):
     client, *_ = aws_app
     # newman_runner stays "disabled" in the API: execution belongs to the worker.

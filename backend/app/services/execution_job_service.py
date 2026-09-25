@@ -337,11 +337,17 @@ def run_job(
     folder_id: str | None,
     runner: NewmanRunner,
     store: ExecutionJobStore,
-    analysis_store: SessionStore,
+    analysis_store: SessionStore | None,
     settings: Settings,
     resolver: destination_policy.Resolver | None = None,
+    hand_off_reports: Callable[[str, bytes, bytes], None] | None = None,
 ) -> None:
     """Drive a queued execution job through its state machine.
+
+    With `hand_off_reports` (the AWS worker), the job stops at ANALYZING once
+    both runs succeeded and the callable receives both reports; the API then
+    builds the analysis (see `job_finalizer`). Otherwise the analysis is built
+    here and stored in `analysis_store`.
 
     `variable_values` is the merged collection < environment < supplied map,
     used ONLY for destination validation and warning redaction.
@@ -377,6 +383,7 @@ def run_job(
             variable_values=variable_values, supplied_values=supplied_values, folder_id=folder_id,
             runner=runner, store=store,
             analysis_store=analysis_store, settings=settings, resolver=resolver,
+            hand_off_reports=hand_off_reports,
         )
     except Exception as exc:
         # The stage is whatever state the job had reached when it raised.
@@ -405,9 +412,10 @@ def _drive_job(
     folder_id: str | None,
     runner: NewmanRunner,
     store: ExecutionJobStore,
-    analysis_store: SessionStore,
+    analysis_store: SessionStore | None,
     settings: Settings,
     resolver: destination_policy.Resolver | None,
+    hand_off_reports: Callable[[str, bytes, bytes], None] | None = None,
 ) -> None:
     if not _write_state(job_id, store, ExecutionJobState.VALIDATING):
         return
@@ -454,6 +462,10 @@ def _drive_job(
     # `_outcome_error` (inside `_run_stage`) already rejected a None/empty report for both outcomes.
     assert baseline.report_bytes is not None
     assert comparison.report_bytes is not None
+    if hand_off_reports is not None:
+        hand_off_reports(job_id, baseline.report_bytes, comparison.report_bytes)
+        return
+    assert analysis_store is not None
     try:
         analysis = analysis_service.build_analysis(
             [("baseline.json", baseline.report_bytes), ("comparison.json", comparison.report_bytes)], settings,
