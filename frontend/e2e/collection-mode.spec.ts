@@ -20,11 +20,11 @@ test("collection mode: two real runs through to a validated JMX", async ({ page 
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: /run a postman collection/i }).click();
 
   // 1. Files -> inspection (nothing executed yet)
   await page.getByLabel("Collection file").setInputFiles(path.join(FIXTURES, "checkout-demo.postman_collection.json"));
   await page.getByLabel("Environment file").setInputFiles(path.join(FIXTURES, "checkout-demo.postman_environment.json"));
+  await expect(page.getByRole("button", { name: /how we handle your data/i })).toBeVisible();
   await page.getByRole("button", { name: /inspect collection/i }).click();
 
   // 2. Variables: only the disabled secret is asked for, as a hidden input
@@ -43,18 +43,18 @@ test("collection mode: two real runs through to a validated JMX", async ({ page 
   await page.getByRole("button", { name: /run collection twice/i }).click();
 
   // 4. Progress names real stages, then 5. the existing Run health page opens
-  await expect(page.getByText(/executing your collection/i)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run health" })).toBeVisible({ timeout: 4 * 60_000 });
+  await expect(page.getByRole("heading", { name: /running your collection/i })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Run health" })).toBeVisible({ timeout: 4 * 60_000 });
   await expect(page.getByRole("heading", { name: "E2E Checkout Demo" })).toBeVisible();
-  await expect(page.getByText(/mode: two_run/)).toBeVisible();
+  await expect(page.getByText("Analysis results")).toBeVisible();
 
   // Auto-correlation finds the session token flow
-  await page.getByRole("button", { name: /^Candidates/ }).click();
+  await page.getByRole("tab", { name: /^Candidates/ }).click();
   await page.getByRole("button", { name: /auto-correlate all reused values/i }).click();
   await expect(page.getByText(/correlation completed/i).first()).toBeVisible({ timeout: 60_000 });
 
   // Generated JMX
-  await page.getByRole("button", { name: /^Generate/ }).click();
+  await page.getByRole("tab", { name: /^Generate/ }).click();
   await page.getByRole("button", { name: "Generate JMX" }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download Generated JMX" }).click();

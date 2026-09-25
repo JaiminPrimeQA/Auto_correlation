@@ -126,7 +126,7 @@ To enable it locally:
 1. Start Docker Desktop (or the Docker daemon).
 2. Build the pinned Newman 6.2.2 image once: `docker build -t baseline11/newman:6.2.2 docker/newman`
 3. Start the backend with `B11_NEWMAN_RUNNER=docker`.
-4. Open the frontend and choose **Run a Postman collection**: pick the collection (and optional
+4. Open the frontend: it opens directly on the collection wizard. Pick the collection (and optional
    environment) → supply any missing variable values (secret-looking ones are hidden inputs and are
    cleared once the job starts) → choose the whole collection or one folder and review the target
    domains → **Run collection twice**. The progress page names the current stage; when both runs are

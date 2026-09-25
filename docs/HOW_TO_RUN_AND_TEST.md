@@ -94,30 +94,21 @@ Quick check that the backend is alive: open http://127.0.0.1:8000/health — you
 
 > Sign-in is turned off for local use. You will go straight to the start page.
 
+> **Theme.** A Light / Dark / System toggle is in the header. It follows your system setting by
+> default.
+
 ---
 
 ## 5. Manual test scenarios
 
 Do these in order. Each one lists what to do and what you should see.
 
-### Test A — Upload two Newman reports (no Docker needed)
+### Test A — Report upload (API only)
 
-1. On the start page choose **Upload Newman reports**.
-2. Select both files from the `samples` folder:
-   `webhook-baseline.json` and `webhook-comparison.json`.
-3. Click **Analyze**.
-
-**Expected**
-
-- The **Run health** tab opens and shows that both runs are healthy.
-- The **Candidates** tab lists correlation candidates (e.g. merchant GUID / merchant ID,
-  webhook ID).
-- Click **Auto-correlate all reused values**. The button then shows it has completed and
-  cannot be clicked twice.
-- The **Dependency graph** tab shows arrows from the request that *produces* a value to the
-  requests that *use* it.
-- The **Classification** tab explains the values that are *not* correlations (credentials,
-  cookies, noise) and why.
+Uploading two existing Newman reports directly is not a start-page action any more; the app
+opens straight on the collection wizard. Report upload still works, but only through the API:
+`POST /api/v1/analyses` with the report files. To manually test the tool from the UI, run the
+booking-flow collection instead, see Test D.
 
 ### Test B — Generate the JMeter plan
 
@@ -153,7 +144,7 @@ hotel booking.
 | `samples/booking-flow.postman_collection.json` | 7 requests: Login → Create booking → Get → Update (PUT) → Partial update (PATCH) → Search → Delete |
 | `samples/booking-flow.postman_environment.json` | `baseUrl`, `username` = `admin`, `password` = `password123` (public demo login, marked secret), guest first/last name |
 
-1. Go back to the start page and choose **Run a Postman collection**.
+1. The app opens on step 1 (Files).
 2. Pick the collection file and the environment file above.
 3. **Variables step:** nothing is missing. `password` shows as a hidden (secret) value, and
    `token` / `bookingid` show as *set by a script* — they are created during the run.
@@ -187,6 +178,7 @@ secret `api_key`).
 | Click **Run collection twice** several times quickly | Only **one** job starts. |
 | After Test D, search the downloaded JMX for `password123` | It does not appear. Secret body fields (password, client_secret, api_key) and secret headers become `${__P(name,)}` properties. |
 | Upload two runs where every request failed (e.g. all 401) | Run health says *not ready*; the tool does not claim a successful correlation. |
+| Open **How we handle your data** under the upload and check the four facts | It expands to show: files and typed values are memory-only, each run's workspace is deleted when the run ends, results expire after 30 minutes and "New analysis" deletes them immediately, and secrets are hidden as typed, never logged and never written into the JMX. |
 
 ---
 
