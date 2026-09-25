@@ -17,6 +17,7 @@ from .core.errors import (
     unhandled_exception_handler,
 )
 from .core.logging import configure_logging, get_logger, new_request_id
+from .core.production_guard import check_production_settings
 
 log = get_logger("app")
 
@@ -58,6 +59,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging()
+    check_production_settings(settings, role="api")
 
     app = FastAPI(
         title=settings.app_name,

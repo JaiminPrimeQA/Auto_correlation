@@ -23,6 +23,7 @@ import time
 from .core import metrics
 from .core.config import Settings, get_settings
 from .core.logging import configure_logging, get_logger
+from .core.production_guard import check_production_settings
 from .domain.execution_job import ExecutionJob, ExecutionJobState, NewmanRunner
 from .repositories.execution_job_store import ExecutionJobStore
 from .repositories.s3_object_store import S3ObjectStore, job_prefix, material_key, report_key
@@ -160,7 +161,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", help="process at most one job, then exit")
     args = parser.parse_args(argv)
     configure_logging()
-    worker = build_worker(get_settings())
+    settings = get_settings()
+    check_production_settings(settings, role="worker")
+    worker = build_worker(settings)
     log.info("worker started", extra={"stage": "worker"})
     if args.once:
         worker.process_one()
