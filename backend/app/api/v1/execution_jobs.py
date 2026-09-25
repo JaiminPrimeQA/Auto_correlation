@@ -2,7 +2,7 @@
 """Execution-job endpoints for the Postman-collection input mode.
 
 Covers the whole Phase 2 execution job lifecycle: pre-execution inspection,
-job creation (which schedules an asynchronous background run), status
+job creation (which hands the run to the bounded job dispatcher), status
 polling, and cancellation/cleanup.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from ...core.config import Settings, get_settings
@@ -21,9 +21,11 @@ from ...repositories.analysis_store import SessionStore
 from ...repositories.execution_job_store import ExecutionJobStore
 from ...schemas import presenters
 from ...services import execution_job_service
+from ...services.job_dispatcher import JobDispatcher
 from ...services.postman_inspector import inspect_collection
 from ..deps import (
     enforce_rate_limit,
+    get_job_dispatcher,
     get_job_store,
     get_newman_runner,
     get_owner_key,
@@ -104,7 +106,6 @@ def _coerce_supplied_values(raw: dict) -> dict[str, str]:
 
 @router.post("", status_code=202)
 async def create_execution_job(
-    background_tasks: BackgroundTasks,
     collection: UploadFile = File(...),
     environment: UploadFile | None = File(None),
     folder_id: str | None = Form(None),
@@ -116,6 +117,7 @@ async def create_execution_job(
     owner_key: str = Depends(get_owner_key),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     runner: NewmanRunner | None = Depends(get_newman_runner),
+    dispatcher: JobDispatcher = Depends(get_job_dispatcher),
     _: None = Depends(enforce_rate_limit),
 ) -> dict:
     # Spec §4: with no runner configured (the default) nothing may execute, so
@@ -138,6 +140,18 @@ async def create_execution_job(
     environment_filename = environment.filename if environment is not None else None
     collection_filename = collection.filename or "collection.json"
 
+    # Parse the run material first: a problem here must never leave a job
+    # persisted that nothing will ever run.
+    collection_data, environment_data, variable_values = await run_in_threadpool(
+        execution_job_service.prepare_run_material,
+        collection_raw=collection_raw,
+        collection_filename=collection_filename,
+        environment_raw=environment_raw,
+        environment_filename=environment_filename,
+        supplied_values=supplied_values,
+        settings=settings,
+    )
+
     job, created = await run_in_threadpool(
         execution_job_service.create_job,
         collection_raw=collection_raw,
@@ -151,22 +165,16 @@ async def create_execution_job(
         store=job_store,
         settings=settings,
     )
+    # Built before dispatching: an inline dispatcher would otherwise run the
+    # job to completion first and the response would not show the created state.
+    dto = presenters.execution_job_dto(job)
+    dto["status_url"] = f"{settings.api_prefix}/execution-jobs/{job.id}"
 
     # `created` is False on an idempotency-key hit that returns an existing
-    # job (possibly already past QUEUED, or even terminal) - scheduling a
-    # background run in that case would start a second run of the same job.
+    # job (possibly already past QUEUED, or even terminal) - dispatching then
+    # would start a second run of the same job.
     if created:
-        collection_data, environment_data, variable_values = await run_in_threadpool(
-            execution_job_service.prepare_run_material,
-            collection_raw=collection_raw,
-            collection_filename=collection_filename,
-            environment_raw=environment_raw,
-            environment_filename=environment_filename,
-            supplied_values=supplied_values,
-            settings=settings,
-        )
-
-        background_tasks.add_task(
+        dispatcher.submit(
             execution_job_service.run_job,
             job.id,
             collection_data=collection_data,
@@ -182,10 +190,8 @@ async def create_execution_job(
 
     log.info(
         "execution job created",
-        extra={"stage": "create_job", "job_id": job.id, "state": job.state.value, "was_created": created},
+        extra={"stage": "create_job", "job_id": job.id, "state": dto["state"], "was_created": created},
     )
-    dto = presenters.execution_job_dto(job)
-    dto["status_url"] = f"{settings.api_prefix}/execution-jobs/{job.id}"
     return dto
 
 

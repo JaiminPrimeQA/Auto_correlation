@@ -19,11 +19,12 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_job_store, get_newman_runner
+from app.api.deps import get_job_dispatcher, get_job_store, get_newman_runner
 from app.api.v1.execution_jobs import _coerce_supplied_values
 from app.domain.execution_job import ExecutionJob, ExecutionJobState
 from app.main import create_app
 from app.services.fake_newman_runner import canned_fake_runner
+from app.services.job_dispatcher import InlineJobDispatcher
 from tests.fixtures.postman_builders import pm_collection, pm_environment, pm_request
 
 
@@ -33,6 +34,7 @@ def client():
     # to the deterministic canned fake explicitly, per request.
     app = create_app()
     app.dependency_overrides[get_newman_runner] = canned_fake_runner
+    app.dependency_overrides[get_job_dispatcher] = InlineJobDispatcher
     return TestClient(app)
 
 
@@ -94,6 +96,7 @@ def test_endpoint_hands_the_runner_only_the_supplied_values():
     runner = canned_fake_runner()
     app = create_app()
     app.dependency_overrides[get_newman_runner] = lambda: runner
+    app.dependency_overrides[get_job_dispatcher] = InlineJobDispatcher
     collection = pm_collection(
         "Threaded",
         [pm_request("Ping", "GET", "https://{{host}}/ping?t={{token}}&e={{env_var}}")],
@@ -307,3 +310,32 @@ def test_existing_inspect_and_analyses_endpoints_still_work(client):
         files=[("files", ("baseline.json", json.dumps(scenario).encode(), "application/json"))],
     )
     assert analyses_resp.status_code == 201
+
+
+class _RecordingDispatcher:
+    def __init__(self):
+        self.submitted = []
+
+    def submit(self, fn, /, *args, **kwargs):
+        self.submitted.append((fn, args, kwargs))
+
+
+def test_create_returns_queued_and_hands_the_run_to_the_dispatcher():
+    app = create_app()
+    recorder = _RecordingDispatcher()
+    app.dependency_overrides[get_newman_runner] = canned_fake_runner
+    app.dependency_overrides[get_job_dispatcher] = lambda: recorder
+    client = TestClient(app)
+    headers = {"Idempotency-Key": "dispatch-once"}
+    responses = [
+        client.post("/api/v1/execution-jobs", data={"confirm": "true", "supplied_values_json": "{}"},
+                    files={"collection": ("c.json", json.dumps(_collection()).encode(), "application/json")},
+                    headers=headers)
+        for _ in range(2)
+    ]
+    first, second = responses
+    assert first.status_code == second.status_code == 202
+    assert first.json()["state"] == "queued"
+    assert first.json()["job_id"] == second.json()["job_id"]
+    assert len(recorder.submitted) == 1  # the idempotent repeat schedules nothing
+    assert recorder.submitted[0][1][0] == first.json()["job_id"]

@@ -15,6 +15,7 @@ from ..repositories.analysis_store import Analysis, InMemorySessionStore, Sessio
 from ..repositories.execution_job_store import ExecutionJobStore, InMemoryExecutionJobStore
 from ..services.docker_newman_runner import DockerNewmanRunner
 from ..services.fake_newman_runner import canned_fake_runner
+from ..services.job_dispatcher import JobDispatcher, ThreadPoolJobDispatcher
 
 
 @lru_cache
@@ -65,6 +66,11 @@ def get_newman_runner(settings: Settings = Depends(get_settings)) -> NewmanRunne
     if settings.newman_runner == "docker" and shutil.which(settings.docker_binary):
         return DockerNewmanRunner(settings)
     return None
+
+
+@lru_cache
+def get_job_dispatcher() -> JobDispatcher:
+    return ThreadPoolJobDispatcher(max_workers=get_settings().max_concurrent_executions)
 
 
 def require_owned_job(
