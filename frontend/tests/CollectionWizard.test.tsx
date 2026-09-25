@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError } from "@/lib/api";
 import { CollectionWizard } from "@/components/collection/CollectionWizard";
@@ -45,13 +45,13 @@ describe("CollectionWizard", () => {
     const summary = makeSummary();
     m.getAnalysis.mockResolvedValue(summary);
     const onDone = vi.fn();
-    render(<CollectionWizard onDone={onDone} onBack={() => {}} />);
+    render(<CollectionWizard onDone={onDone} />);
 
     await throughToReview();
-    fireEvent.change(screen.getByLabelText(/scope/i), { target: { value: "auth" } });
+    fireEvent.click(screen.getByRole("radio", { name: /^auth/i }));
     fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
 
-    await waitFor(() => expect(onDone).toHaveBeenCalledWith(summary));
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(summary, "job_1"));
     expect(m.createExecutionJob).toHaveBeenCalledTimes(1);
     const input = m.createExecutionJob.mock.calls[0][0];
     expect(input.folderId).toBe("auth");
@@ -65,7 +65,7 @@ describe("CollectionWizard", () => {
       state: "failed", stage_history: ["validating", "running_baseline", "failed"],
       error_code: "timeout", error_detail: "The Newman run exceeded its time limit and was stopped.",
     }));
-    render(<CollectionWizard onDone={() => {}} onBack={() => {}} />);
+    render(<CollectionWizard onDone={() => {}} />);
     await throughToReview();
     fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
 
@@ -87,7 +87,7 @@ describe("CollectionWizard", () => {
       .mockRejectedValueOnce(new ApiError("Too many active jobs", 429, "too_many_active_jobs"))
       .mockResolvedValueOnce(makeJob());
     m.getExecutionJob.mockResolvedValue(makeJob({ state: "queued" }));
-    render(<CollectionWizard onDone={() => {}} onBack={() => {}} />);
+    render(<CollectionWizard onDone={() => {}} />);
     await throughToReview();
     fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Too many active jobs");
@@ -101,11 +101,11 @@ describe("CollectionWizard", () => {
 
   it("changing the folder starts a new attempt", async () => {
     m.createExecutionJob.mockRejectedValue(new ApiError("Server busy", 503, "runner_unavailable"));
-    render(<CollectionWizard onDone={() => {}} onBack={() => {}} />);
+    render(<CollectionWizard onDone={() => {}} />);
     await throughToReview();
     fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
     await screen.findByRole("alert");
-    fireEvent.change(screen.getByLabelText(/scope/i), { target: { value: "orders" } });
+    fireEvent.click(screen.getByRole("radio", { name: /^orders/i }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
     });
@@ -115,11 +115,31 @@ describe("CollectionWizard", () => {
   });
 
   it("shows which step the tester is on", async () => {
-    render(<CollectionWizard onDone={() => {}} onBack={() => {}} />);
-    const steps = () => within(screen.getByRole("list", { name: /wizard steps/i }));
-    expect(steps().getByText("Files").closest("li")).toHaveAttribute("aria-current", "step");
+    render(<CollectionWizard onDone={() => {}} />);
+    const current = () => screen.getAllByRole("listitem").find((li) => li.dataset.state === "current");
+    expect(current()?.textContent).toBe("1Files");
     await throughToReview();
-    expect(steps().getByText("Scope and review").closest("li")).toHaveAttribute("aria-current", "step");
-    expect(steps().getByText("Files").closest("li")).not.toHaveAttribute("aria-current");
+    expect(current()?.textContent).toBe("3Review");
+  });
+
+  it("calls onJobCreated once the job exists, before it is ready", async () => {
+    m.createExecutionJob.mockResolvedValue(makeJob());
+    m.getExecutionJob.mockResolvedValue(makeJob({ state: "queued" }));
+    const onJobCreated = vi.fn();
+    render(<CollectionWizard onDone={() => {}} onJobCreated={onJobCreated} />);
+
+    await throughToReview();
+    fireEvent.click(screen.getByRole("radio", { name: /^auth/i }));
+    fireEvent.click(screen.getByRole("button", { name: /run collection twice/i }));
+
+    await waitFor(() => expect(onJobCreated).toHaveBeenCalledWith("job_1"));
+    expect(onJobCreated).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a four-step progress indicator and no mode switch", async () => {
+    render(<CollectionWizard onDone={() => {}} />);
+    const steps = screen.getAllByRole("listitem").filter((li) => li.dataset.state);
+    expect(steps.map((s) => s.textContent)).toEqual(["1Files", "2Variables", "3Review", "4Run"]);
+    expect(screen.queryByRole("button", { name: /choose another mode/i })).toBeNull();
   });
 });

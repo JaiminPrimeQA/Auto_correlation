@@ -41,9 +41,9 @@ describe("ReviewStep", () => {
   it("shows the request count of the chosen folder and reports folder changes", () => {
     const props = renderReview({ folderId: "orders" });
     expect(document.body.textContent).toMatch(/3 requests/i);
-    fireEvent.change(screen.getByLabelText(/scope/i), { target: { value: "auth" } });
+    fireEvent.click(screen.getByRole("radio", { name: /^auth/i }));
     expect(props.onFolderChange).toHaveBeenCalledWith("auth");
-    fireEvent.change(screen.getByLabelText(/scope/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("radio", { name: /whole collection/i }));
     expect(props.onFolderChange).toHaveBeenLastCalledWith(null);
   });
 

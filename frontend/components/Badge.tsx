@@ -40,5 +40,7 @@ export function ClassificationBadge({ classification }: { classification: string
 export function ReadinessPill({ state }: { state: string }) {
   const cls =
     state === "ready" ? "badge-high" : state === "ready_with_review" ? "badge-medium" : "badge-rejected";
-  return <span className={`badge ${cls}`}>{state.replace(/_/g, " ")}</span>;
+  const text =
+    state === "ready" ? "Ready for correlation" : state === "ready_with_review" ? "Ready, review advised" : "Not ready";
+  return <span className={`badge ${cls}`}>{text}</span>;
 }

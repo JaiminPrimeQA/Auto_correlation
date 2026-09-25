@@ -25,6 +25,6 @@ export default function AuthCallback() {
       <a className="btn-ghost" href="/">Back to the app</a>
     </div>
   ) : (
-    <p className="text-sm text-slate-400">Signing you in…</p>
+    <p className="text-sm text-fg-muted">Signing you in...</p>
   );
 }

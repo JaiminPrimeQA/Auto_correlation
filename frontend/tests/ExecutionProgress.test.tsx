@@ -39,6 +39,7 @@ describe("ExecutionProgress", () => {
     getJob.mockResolvedValue(makeJob({ state: "running_baseline", stage_history: ["validating", "running_baseline"] }));
     renderProgress();
     await tick(0);
+    expect(screen.getByRole("heading", { name: /running your collection/i })).toBeInTheDocument();
     expect(screen.getByText(/run a/i).closest("li")).toHaveAttribute("data-status", "current");
     expect(screen.getByText(/checking every request destination/i).closest("li")).toHaveAttribute("data-status", "done");
   });

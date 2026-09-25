@@ -1,22 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { api, type AnalysisSummary, type CollectionInspection } from "@/lib/api";
 import { suppliedValuesFor, variablesToAsk } from "@/lib/executionJob";
+import { Stepper } from "@/components/ui/Stepper";
+import { fadeVariants, stepVariants } from "@/lib/motion";
 import { ExecutionProgress } from "./ExecutionProgress";
 import { FilesStep, type CollectionFiles } from "./FilesStep";
 import { ReviewStep } from "./ReviewStep";
 import { VariablesStep } from "./VariablesStep";
 
 type Step = "files" | "variables" | "review" | "progress";
-
-const STEP_LABELS: { id: Step | "results"; label: string }[] = [
-  { id: "files", label: "Files" },
-  { id: "variables", label: "Variables" },
-  { id: "review", label: "Scope and review" },
-  { id: "progress", label: "Execution progress" },
-  { id: "results", label: "Analysis results" },
-];
+const ORDER: Step[] = ["files", "variables", "review", "progress"];
+const STEP_LABELS = ["Files", "Variables", "Review", "Run"];
 
 function newAttemptKey(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -24,16 +21,18 @@ function newAttemptKey(): string {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-/** "Run a Postman collection" mode (spec §7): Files → Variables → Scope and
- * review → Execution progress → the existing analysis results. */
+/** "Run a Postman collection" mode (spec §7): Files → Variables → Review →
+ * Run, then the existing analysis results. */
 export function CollectionWizard({
   onDone,
-  onBack,
+  onJobCreated,
 }: {
-  onDone: (summary: AnalysisSummary) => void;
-  onBack: () => void;
+  onDone: (summary: AnalysisSummary, jobId: string) => void;
+  onJobCreated?: (jobId: string) => void;
 }) {
-  const [step, setStep] = useState<Step>("files");
+  const [step, setStepState] = useState<Step>("files");
+  const [direction, setDirection] = useState<1 | -1>(1);
+  const reduce = useReducedMotion();
   const [files, setFiles] = useState<CollectionFiles | null>(null);
   const [inspection, setInspection] = useState<CollectionInspection | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -45,6 +44,11 @@ export function CollectionWizard({
   const [jobId, setJobId] = useState<string | null>(null);
 
   const askedNames = inspection ? variablesToAsk(inspection).map((v) => v.name) : [];
+
+  function setStep(next: Step) {
+    setDirection(ORDER.indexOf(next) >= ORDER.indexOf(step) ? 1 : -1);
+    setStepState(next);
+  }
 
   function clearSecrets() {
     if (!inspection) return;
@@ -70,6 +74,7 @@ export function CollectionWizard({
       });
       clearSecrets();
       setJobId(job.job_id);
+      onJobCreated?.(job.job_id);
       setStep("progress");
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
@@ -91,77 +96,68 @@ export function CollectionWizard({
     setStep("files");
   }
 
-  const currentIndex = STEP_LABELS.findIndex((s) => s.id === step);
-
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Run a Postman collection</h1>
-        <button className="btn-ghost text-xs" onClick={onBack}>
-          Choose another mode
-        </button>
-      </div>
-      <ol aria-label="Wizard steps" className="flex flex-wrap gap-2 text-xs">
-        {STEP_LABELS.map((s, i) => (
-          <li
-            key={s.id}
-            aria-current={i === currentIndex ? "step" : undefined}
-            className={`rounded-full border px-3 py-1 ${
-              i === currentIndex
-                ? "border-brand bg-brand/10 text-white"
-                : i < currentIndex
-                  ? "border-edge text-slate-300"
-                  : "border-edge/50 text-slate-500"
-            }`}
-          >
-            <span className="text-slate-500">{i + 1}.</span> <span>{s.label}</span>
-          </li>
-        ))}
-      </ol>
-
-      {step === "files" && (
-        <FilesStep
-          initial={files}
-          onInspected={(picked, result) => {
-            setFiles(picked);
-            setInspection(result);
-            setValues({});
-            setFolderId(null);
-            startAttempt();
-            setStep("variables");
-          }}
-        />
-      )}
-      {step === "variables" && inspection && (
-        <VariablesStep
-          inspection={inspection}
-          values={values}
-          onChange={setValues}
-          onBack={() => setStep("files")}
-          onContinue={() => {
-            startAttempt();
-            setStep("review");
-          }}
-        />
-      )}
-      {step === "review" && files && inspection && (
-        <ReviewStep
-          files={files}
-          inspection={inspection}
-          folderId={folderId}
-          onFolderChange={(id) => {
-            setFolderId(id);
-            startAttempt();
-          }}
-          suppliedNames={askedNames}
-          error={submitError}
-          onBack={() => setStep("variables")}
-          onSubmit={submit}
-        />
-      )}
-      {step === "progress" && jobId && (
-        <ExecutionProgress jobId={jobId} onReady={onDone} onRetry={retry} onStartOver={startOver} />
-      )}
+      <Stepper steps={STEP_LABELS} current={ORDER.indexOf(step)} />
+      <AnimatePresence mode="wait" custom={direction} initial={false}>
+        <motion.div
+          key={step}
+          custom={direction}
+          variants={reduce ? fadeVariants : stepVariants}
+          initial="enter"
+          animate="center"
+          exit="exit"
+        >
+          {step === "files" && (
+            <FilesStep
+              initial={files}
+              onInspected={(picked, result) => {
+                setFiles(picked);
+                setInspection(result);
+                setValues({});
+                setFolderId(null);
+                startAttempt();
+                setStep("variables");
+              }}
+            />
+          )}
+          {step === "variables" && inspection && (
+            <VariablesStep
+              inspection={inspection}
+              values={values}
+              onChange={setValues}
+              onBack={() => setStep("files")}
+              onContinue={() => {
+                startAttempt();
+                setStep("review");
+              }}
+            />
+          )}
+          {step === "review" && files && inspection && (
+            <ReviewStep
+              files={files}
+              inspection={inspection}
+              folderId={folderId}
+              onFolderChange={(id) => {
+                setFolderId(id);
+                startAttempt();
+              }}
+              suppliedNames={askedNames}
+              error={submitError}
+              onBack={() => setStep("variables")}
+              onSubmit={submit}
+            />
+          )}
+          {step === "progress" && jobId && (
+            <ExecutionProgress
+              jobId={jobId}
+              onReady={(summary) => onDone(summary, jobId)}
+              onRetry={retry}
+              onStartOver={startOver}
+            />
+          )}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }

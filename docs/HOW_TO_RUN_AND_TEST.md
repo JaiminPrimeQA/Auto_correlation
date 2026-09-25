@@ -1,4 +1,4 @@
-# Baseline11 Auto-Correlate — How to Run and Test
+# Baseline11 Auto-Correlate: How to Run and Test
 
 A short, practical guide for anyone who wants to start the app on their own machine and check
 that it works. No prior knowledge of the codebase is needed.
@@ -13,8 +13,9 @@ and **re-use** it in later requests. This is called *correlation*.
 
 Baseline11 does this for you:
 
-1. It gets **two runs** of the same Postman flow — either you upload two Newman JSON reports,
-   or you upload a Postman collection and the tool runs it twice for you (inside Docker).
+1. It gets **two runs** of the same Postman flow: you upload a Postman collection and the tool
+   runs it twice for you (inside Docker). Two existing Newman JSON reports can also be sent
+   straight to the API.
 2. It compares both runs, finds which values were produced by one response and re-used by a
    later request, and proposes correlation rules.
 3. It generates a **JMeter 5.6.3 test plan (`.jmx`)** with the extractors already in place, and
@@ -28,7 +29,7 @@ Baseline11 does this for you:
 |------|---------|-----------|
 | Python | 3.12 or newer (Windows: use the `py` launcher) | Backend API |
 | Node.js | 22 or newer (npm included) | Frontend web app |
-| Docker Desktop | running | Only for "Run a Postman collection" |
+| Docker Desktop | running | Running the collection twice (the main flow) |
 | Java | 17 or newer | Only for "Validate with JMeter" |
 | Git | any | Getting the code |
 
@@ -53,7 +54,7 @@ cd frontend
 npm install
 cd ..
 
-# Newman image for "Run a Postman collection" (Docker Desktop must be running)
+# Newman image that runs your collection (Docker Desktop must be running)
 docker build -t baseline11/newman:6.2.2 docker/newman
 ```
 
@@ -72,15 +73,15 @@ If you already have JMeter 5.6.3 somewhere else, set `B11_JMETER_HOME` to that f
 
 You need **two terminals**, and both must stay open.
 
-**Terminal 1 — Backend (API on port 8000)**
+**Terminal 1: Backend (API on port 8000)**
 
 ```powershell
 cd Auto_correlation\backend
-$env:B11_NEWMAN_RUNNER = "docker"      # enables "Run a Postman collection"; omit if no Docker
+$env:B11_NEWMAN_RUNNER = "docker"      # lets the app run your collection; needs Docker
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-**Terminal 2 — Frontend (web app on port 3000)**
+**Terminal 2: Frontend (web app on port 3000)**
 
 ```powershell
 cd Auto_correlation\frontend
@@ -89,10 +90,13 @@ npm run dev
 
 Open **http://localhost:3000** in your browser.
 
-Quick check that the backend is alive: open http://127.0.0.1:8000/health — you should see
+Quick check that the backend is alive: open http://127.0.0.1:8000/health, you should see
 `{"status":"ok", ...}`.
 
 > Sign-in is turned off for local use. You will go straight to the start page.
+
+> **Theme.** A Light / Dark / System toggle is in the header. It follows your system setting by
+> default.
 
 ---
 
@@ -100,35 +104,23 @@ Quick check that the backend is alive: open http://127.0.0.1:8000/health — you
 
 Do these in order. Each one lists what to do and what you should see.
 
-### Test A — Upload two Newman reports (no Docker needed)
+### Test A: Report upload (API only)
 
-1. On the start page choose **Upload Newman reports**.
-2. Select both files from the `samples` folder:
-   `webhook-baseline.json` and `webhook-comparison.json`.
-3. Click **Analyze**.
+Uploading two existing Newman reports directly is not a start-page action any more; the app
+opens straight on the collection wizard. Report upload still works, but only through the API:
+`POST /api/v1/analyses` with the report files. To manually test the tool from the UI, run the
+booking-flow collection instead, see Test D.
 
-**Expected**
-
-- The **Run health** tab opens and shows that both runs are healthy.
-- The **Candidates** tab lists correlation candidates (e.g. merchant GUID / merchant ID,
-  webhook ID).
-- Click **Auto-correlate all reused values**. The button then shows it has completed and
-  cannot be clicked twice.
-- The **Dependency graph** tab shows arrows from the request that *produces* a value to the
-  requests that *use* it.
-- The **Classification** tab explains the values that are *not* correlations (credentials,
-  cookies, noise) and why.
-
-### Test B — Generate the JMeter plan
+### Test B: Generate the JMeter plan
 
 1. Open the **Generate** tab.
 2. Click **Preview Draft** to see the plan, then generate and download it.
 
-**Expected:** a `.jmx` file downloads. The badge says *Generated JMX — structurally valid,
+**Expected:** a `.jmx` file downloads. The badge says *Generated JMX: structurally valid,
 not yet executed*. Open it in JMeter: producer requests carry extractors, and later requests
 use `${variableName}`.
 
-### Test C — Validate with JMeter (needs Java + JMeter, see section 3)
+### Test C: Validate with JMeter (needs Java + JMeter, see section 3)
 
 The webhook sample needs its demo API running. Start it in a **third terminal**:
 
@@ -142,7 +134,7 @@ Then, in the **Generate** tab, click **Validate with JMeter**.
 **Expected:** a report shows every sampler, its success/failure, and which variables were
 extracted. If everything passes the badge changes to **✓ Validated JMX**.
 
-### Test D — Run a Postman collection twice (needs Docker + internet)
+### Test D: Run a Postman collection twice (needs Docker + internet)
 
 Use the ready-made **booking flow** in `samples/`. It calls the public practice API
 Restful-Booker (`https://restful-booker.herokuapp.com`) and books, updates and deletes a
@@ -153,10 +145,10 @@ hotel booking.
 | `samples/booking-flow.postman_collection.json` | 7 requests: Login → Create booking → Get → Update (PUT) → Partial update (PATCH) → Search → Delete |
 | `samples/booking-flow.postman_environment.json` | `baseUrl`, `username` = `admin`, `password` = `password123` (public demo login, marked secret), guest first/last name |
 
-1. Go back to the start page and choose **Run a Postman collection**.
+1. The app opens on step 1 (Files).
 2. Pick the collection file and the environment file above.
 3. **Variables step:** nothing is missing. `password` shows as a hidden (secret) value, and
-   `token` / `bookingid` show as *set by a script* — they are created during the run.
+   `token` / `bookingid` show as *set by a script*, created during the run.
 4. **Scope and review:** keep the whole collection; the only target domain is
    `restful-booker.herokuapp.com`. Click **Run collection twice**.
 
@@ -164,12 +156,12 @@ hotel booking.
 
 | Where | You should see |
 |-------|----------------|
-| Progress page | validating → running baseline → running comparison → analysing → ready (about 30–60 s) |
+| Progress page | validating → running baseline → running comparison → analysing → ready (about 30-60 s) |
 | Run health | Both runs 7/7 successful, alignment 100 %, readiness **Ready** |
 | Candidates | `token` (from Login, used in the `Cookie` of PUT/PATCH/DELETE) and `bookingid` (from Create booking, used in the URL of Get/PUT/PATCH/Delete) |
 | Auto-correlate | Creates `token`, `bookingid` and three echoed values (`firstname`, `lastname`, `checkin`) |
-| Generate | *Generated JMX*; PUT/PATCH/Delete carry a **Set client cookies (token)** step; the login body contains `"password": "${__P(password,)}"` — the real password is never written into the plan |
-| Validate with JMeter | A **password** field appears: type `password123`, then validate. **✓ Validated JMX** — 7/7 samplers pass (Delete answers 201; that is normal for this API). Without the password, validation fails on purpose |
+| Generate | *Generated JMX*; PUT/PATCH/Delete carry a **Set client cookies (token)** step; the login body contains `"password": "${__P(password,)}"`, the real password is never written into the plan |
+| Validate with JMeter | A **password** field appears: type `password123`, then validate. **✓ Validated JMX**: 7/7 samplers pass (Delete answers 201; that is normal for this API). Without the password, validation fails on purpose |
 
 Why this is a good test: the login token and the booking id are **different on every run**,
 so a plan that replays the recorded values fails, and only a correctly correlated plan passes.
@@ -178,7 +170,7 @@ so a plan that replays the recorded values fails, and only a correctly correlate
 `checkout-demo.postman_environment.json` (calls `postman-echo.com`; type any text for the
 secret `api_key`).
 
-### Test E — Things that must be blocked (safety checks)
+### Test E: Things that must be blocked (safety checks)
 
 | Try this | Expected result |
 |----------|-----------------|
@@ -186,7 +178,8 @@ secret `api_key`).
 | In Test D, leave a required variable empty | You cannot start the run until it is filled in. |
 | Click **Run collection twice** several times quickly | Only **one** job starts. |
 | After Test D, search the downloaded JMX for `password123` | It does not appear. Secret body fields (password, client_secret, api_key) and secret headers become `${__P(name,)}` properties. |
-| Upload two runs where every request failed (e.g. all 401) | Run health says *not ready*; the tool does not claim a successful correlation. |
+| Run a collection where every request fails (e.g. all 401), or send two such reports to `POST /api/v1/analyses` | Run health says *not ready*; the tool does not claim a successful correlation. |
+| Open **How we handle your data** under the upload and check the four facts | It expands to show: files and typed values are memory-only, each run's workspace is deleted when the run ends, results expire after 30 minutes and "New analysis" deletes them immediately, and secrets are hidden as typed, never logged and never written into the JMX. |
 
 ---
 
@@ -222,13 +215,13 @@ runner, Docker images, Terraform checks and a JMeter smoke test.
 
 | Problem | Fix |
 |---------|-----|
-| "Run a Postman collection" answers *503* / execution disabled | Start the backend with `B11_NEWMAN_RUNNER=docker` and make sure Docker Desktop is running. |
+| **Inspect collection** or **Run collection twice** answers *503* / execution disabled | Start the backend with `B11_NEWMAN_RUNNER=docker` and make sure Docker Desktop is running. |
 | Job fails immediately with a Docker/image error | Build the image: `docker build -t baseline11/newman:6.2.2 docker/newman`. |
 | "JMeter is not available on this host" | Run `bash scripts/provision_jmeter.sh .jmeter` or set `B11_JMETER_HOME`. |
 | Port 3000 or 8000 already in use | Another copy is running. Close it, or use another port (`uvicorn ... --port 8010`, and `.\node_modules\.bin\next dev -p 3010` with `$env:BACKEND_URL="http://127.0.0.1:8010"`). |
 | `python` is not recognised | On Windows use `py` or the venv path `.\backend\.venv\Scripts\python.exe`. |
 | My earlier analysis disappeared | Analyses are kept in memory for 30 minutes and are lost when the backend restarts. Upload again. |
-| Collection that calls `localhost` / `127.0.0.1` fails | By design. The collection runs inside an isolated container and private addresses are blocked. Use a publicly reachable test API, or upload Newman reports you recorded yourself (Test A). |
+| Collection that calls `localhost` / `127.0.0.1` fails | By design. The collection runs inside an isolated container and private addresses are blocked. Use a publicly reachable test API, or send Newman reports you recorded yourself to the API (Test A). |
 
 ---
 

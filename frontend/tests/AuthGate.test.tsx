@@ -40,6 +40,14 @@ describe("AuthGate", () => {
     expect(m.signIn).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the header and theme toggle visible on the sign-in screen", async () => {
+    m.isAuthEnabled.mockReturnValue(true);
+    m.getCurrentUser.mockResolvedValue(null);
+    render(<AuthGate><p>app content</p></AuthGate>);
+    await screen.findByRole("button", { name: /sign in/i });
+    expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeInTheDocument();
+  });
+
   it("lets the sign-in callback page through before anyone is signed in", async () => {
     m.isAuthEnabled.mockReturnValue(true);
     m.getCurrentUser.mockResolvedValue(null);

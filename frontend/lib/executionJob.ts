@@ -15,8 +15,8 @@ export const RUN_LIMITS = {
 export const STAGES: { state: ExecutionJobState; label: string }[] = [
   { state: "queued", label: "Waiting for a free runner" },
   { state: "validating", label: "Checking every request destination is public HTTPS" },
-  { state: "running_baseline", label: "Run A — executing the collection (baseline)" },
-  { state: "running_comparison", label: "Run B — executing again from the same starting values (comparison)" },
+  { state: "running_baseline", label: "Run A: executing the collection (baseline)" },
+  { state: "running_comparison", label: "Run B: executing again from the same starting values (comparison)" },
   { state: "analyzing", label: "Comparing both runs and finding correlations" },
 ];
 

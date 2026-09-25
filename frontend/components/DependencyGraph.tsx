@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownIcon, ArrowUpIcon } from "@phosphor-icons/react";
 import { api, type GraphData, type GraphEdge, type GraphNode } from "@/lib/api";
 
 // Dependency graph (§22). Dependency-free SVG so it stays React 19-safe and
@@ -22,16 +23,23 @@ interface Pos {
 }
 
 const CONF_STROKE: Record<string, string> = {
-  high: "#22c55e",
-  medium: "#f59e0b",
-  low: "#64748b",
+  high: "rgb(var(--graph-edge-high))",
+  medium: "rgb(var(--graph-edge-medium))",
+  low: "rgb(var(--graph-edge-low))",
 };
 const ROLE_ACCENT: Record<string, string> = {
-  producer: "#4f9cff",
-  consumer: "#a855f7",
-  both: "#22d3ee",
-  none: "#334155",
+  producer: "rgb(var(--graph-produce))",
+  consumer: "rgb(var(--graph-consume))",
+  both: "rgb(var(--graph-produce))",
+  none: "rgb(var(--graph-node-border))",
 };
+// Marker defs keyed by role name instead of hex (colours are now CSS vars).
+const MARKERS: [string, string][] = [
+  ["high", CONF_STROKE.high],
+  ["medium", CONF_STROKE.medium],
+  ["low", CONF_STROKE.low],
+  ["produce", ROLE_ACCENT.producer],
+];
 
 export function DependencyGraph({ analysisId }: { analysisId: string }) {
   const [data, setData] = useState<GraphData | null>(null);
@@ -305,7 +313,7 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
   };
 
   if (error) return <div className="card p-4 text-sm text-danger">Failed to load graph: {error}</div>;
-  if (!data) return <div className="card p-6 text-sm text-slate-400">Building dependency graph…</div>;
+  if (!data) return <div className="card p-6 text-sm text-fg-muted">Building dependency graph...</div>;
 
   const selEdge =
     selected?.type === "edge" ? drawEdges.find((e) => e.id === selected.id) : null;
@@ -315,7 +323,7 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
   return (
     <div className="space-y-3">
       {!data.edges.length && (
-        <p className="card p-4 text-sm text-slate-300">
+        <p className="card p-4 text-sm text-fg">
           Showing all {data.stats.apis} APIs. No dependency rules are available yet.
           Use Auto-correlate in Candidates, or add a reviewed rule, to connect them.
         </p>
@@ -323,8 +331,8 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
       {/* toolbar */}
       <div className="card flex flex-wrap items-center gap-2 p-3 text-xs">
         <input
-          className="w-44 rounded border border-edge bg-ink px-2 py-1"
-          placeholder="Search API…"
+          className="input w-44 px-2 py-1 text-xs"
+          placeholder="Search API..."
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
@@ -332,9 +340,9 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
           }}
         />
         <label className="flex items-center gap-1">
-          <span className="text-slate-400">Variable</span>
+          <span className="text-fg-muted">Variable</span>
           <select
-            className="rounded border border-edge bg-ink px-2 py-1"
+            className="input px-2 py-1 text-xs"
             value={variable}
             onChange={(e) => {
               setVariable(e.target.value);
@@ -351,9 +359,9 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
           </select>
         </label>
         <label className="flex items-center gap-1">
-          <span className="text-slate-400">Location</span>
+          <span className="text-fg-muted">Location</span>
           <select
-            className="rounded border border-edge bg-ink px-2 py-1"
+            className="input px-2 py-1 text-xs"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
           >
@@ -366,7 +374,7 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
           </select>
         </label>
         <div className="flex items-center gap-1">
-          <span className="text-slate-400">Confidence</span>
+          <span className="text-fg-muted">Confidence</span>
           {["high", "medium", "low"].map((c) => (
             <button
               key={c}
@@ -387,15 +395,15 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
         </div>
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={aggregate} onChange={(e) => setAggregate(e.target.checked)} />
-          <span className="text-slate-400">Aggregate edges</span>
+          <span className="text-fg-muted">Aggregate edges</span>
         </label>
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={showUnlinked} onChange={(e) => setShowUnlinked(e.target.checked)} />
-          <span className="text-slate-400">Show unlinked</span>
+          <span className="text-fg-muted">Show unlinked</span>
         </label>
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={showRejected} onChange={(e) => setShowRejected(e.target.checked)} />
-          <span className="text-slate-400">Show rejected</span>
+          <span className="text-fg-muted">Show rejected</span>
         </label>
         <div className="ml-auto flex items-center gap-1">
           <button className="btn-ghost px-2 py-1" onClick={() => zoomBtn(1 / 1.2)}>
@@ -416,7 +424,7 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
       {/* folder filter */}
       {data.facets.folders.length > 1 && (
         <div className="card flex flex-wrap items-center gap-2 p-2 text-xs">
-          <span className="text-slate-400">Folders:</span>
+          <span className="text-fg-muted">Folders:</span>
           {data.facets.folders.map((f) => (
             <button
               key={f}
@@ -436,13 +444,13 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
           className="card relative h-[560px] w-full min-w-0 shrink-0 overflow-hidden lg:flex-1"
           style={{ cursor: pan.current ? "grabbing" : "grab" }}
         >
-          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-ink/80 px-2 py-1 text-[11px] text-slate-300">
+          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded-[10px] bg-surface2/80 px-2 py-1 text-[11px] text-fg">
             {data.stats.apis} APIs · {data.stats.producers} producers · {data.stats.consumers} consumers ·{" "}
             {data.stats.variables} variables · {drawEdges.length}/{data.stats.edges} edges shown
           </div>
           {(focusNodeId || variable !== "all" || selected) && (
             <button
-              className="absolute right-2 top-2 z-10 rounded bg-ink/80 px-2 py-1 text-[11px] text-brand hover:underline"
+              className="absolute right-2 top-2 z-10 rounded-[10px] bg-surface2/80 px-2 py-1 text-[11px] text-accent-soft-ink hover:underline"
               onClick={() => {
                 setFocusNodeId(null);
                 setSelected(null);
@@ -461,10 +469,10 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
             onMouseLeave={endPan}
           >
             <defs>
-              {["#22c55e", "#f59e0b", "#64748b", "#4f9cff"].map((c) => (
+              {MARKERS.map(([key, c]) => (
                 <marker
-                  key={c}
-                  id={`arrow-${c.slice(1)}`}
+                  key={key}
+                  id={`arrow-${key}`}
                   viewBox="0 0 10 10"
                   refX="9"
                   refY="5"
@@ -472,7 +480,7 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
                   markerHeight="7"
                   orient="auto-start-reverse"
                 >
-                  <path d="M0,0 L10,5 L0,10 z" fill={c} />
+                  <path d="M0,0 L10,5 L0,10 z" style={{ fill: c }} />
                 </marker>
               ))}
             </defs>
@@ -487,7 +495,8 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
                 const x2 = t.x;
                 const y2 = t.y + NODE_H / 2;
                 const mx = (x1 + x2) / 2;
-                const col = CONF_STROKE[e.confidence] ?? "#64748b";
+                const confKey = e.confidence in CONF_STROKE ? e.confidence : "low";
+                const col = CONF_STROKE[confKey];
                 const dim = highlight ? !(highlight.has(e.source) && highlight.has(e.target)) : false;
                 const isSel = selEdge?.id === e.id;
                 const label = aggregate && e.group.length > 1 ? `${e.group.length} vars` : e.variable;
@@ -498,15 +507,16 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
                     <path
                       d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
                       fill="none"
-                      stroke={col}
+                      style={{ stroke: col }}
                       strokeWidth={isSel ? 3.5 : 2}
                       strokeDasharray={e.state === "suggested" || e.state === "rejected" ? "6 4" : undefined}
-                      markerEnd={`url(#arrow-${col.slice(1)})`}
+                      markerEnd={`url(#arrow-${confKey})`}
                     />
                     <rect x={mx - label.length * 3.4 - 6} y={(y1 + y2) / 2 - 9} rx={3}
-                      width={label.length * 6.8 + 12} height={16} fill="#0b1220" stroke={col} strokeOpacity={0.5} />
-                    <text x={mx} y={(y1 + y2) / 2 + 3} textAnchor="middle" fontSize={11} fill="#cbd5e1"
-                      className="mono">
+                      width={label.length * 6.8 + 12} height={16}
+                      style={{ fill: "rgb(var(--bg))", stroke: col }} strokeOpacity={0.5} />
+                    <text x={mx} y={(y1 + y2) / 2 + 3} textAnchor="middle" fontSize={11}
+                      style={{ fill: "rgb(var(--graph-text))" }} className="mono">
                       {label}
                     </text>
                   </g>
@@ -532,27 +542,26 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
                       width={NODE_W}
                       height={NODE_H}
                       rx={8}
-                      fill="#111a2e"
-                      stroke={isSel ? "#4f9cff" : accent}
+                      style={{ fill: "rgb(var(--graph-node))", stroke: isSel ? "rgb(var(--graph-produce))" : accent }}
                       strokeWidth={isSel ? 3 : 1.5}
                     />
-                    <rect width={5} height={NODE_H} rx={2} fill={accent} />
-                    <text x={14} y={20} fontSize={11} fill="#94a3b8" className="mono">
+                    <rect width={5} height={NODE_H} rx={2} style={{ fill: accent }} />
+                    <text x={14} y={20} fontSize={11} style={{ fill: "rgb(var(--graph-edge-low))" }} className="mono">
                       #{n.index + 1} {n.method}
                     </text>
-                    <text x={14} y={38} fontSize={13} fill="#e6edf7" fontWeight={600}>
-                      {n.name.length > 24 ? n.name.slice(0, 23) + "…" : n.name}
+                    <text x={14} y={38} fontSize={13} style={{ fill: "rgb(var(--graph-text))" }} fontWeight={600}>
+                      {n.name.length > 24 ? n.name.slice(0, 23) + "..." : n.name}
                     </text>
-                    <text x={14} y={54} fontSize={10} fill="#64748b" className="mono">
-                      {n.path.length > 28 ? n.path.slice(0, 27) + "…" : n.path}
+                    <text x={14} y={54} fontSize={10} style={{ fill: "rgb(var(--graph-edge-low))" }} className="mono">
+                      {n.path.length > 28 ? n.path.slice(0, 27) + "..." : n.path}
                     </text>
                     {n.produces.length > 0 && (
-                      <text x={NODE_W - 10} y={20} textAnchor="end" fontSize={10} fill="#4f9cff">
+                      <text x={NODE_W - 10} y={20} textAnchor="end" fontSize={10} style={{ fill: "rgb(var(--graph-produce))" }}>
                         ▲{n.produces.length}
                       </text>
                     )}
                     {n.consumes.length > 0 && (
-                      <text x={NODE_W - 10} y={34} textAnchor="end" fontSize={10} fill="#a855f7">
+                      <text x={NODE_W - 10} y={34} textAnchor="end" fontSize={10} style={{ fill: "rgb(var(--graph-consume))" }}>
                         ▼{n.consumes.length}
                       </text>
                     )}
@@ -563,9 +572,19 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
           </svg>
 
           {/* legend */}
-          <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-x-3 gap-y-1 rounded bg-ink/80 px-2 py-1 text-[10px] text-slate-300">
-            <span><span style={{ color: ROLE_ACCENT.producer }}>▲</span> producer</span>
-            <span><span style={{ color: ROLE_ACCENT.consumer }}>▼</span> consumer</span>
+          <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] bg-surface2/80 px-2 py-1 text-[10px] text-fg">
+            <span className="inline-flex items-center gap-1">
+              <span style={{ color: ROLE_ACCENT.producer }} className="inline-flex">
+                <ArrowUpIcon size={14} aria-hidden />
+              </span>{" "}
+              producer
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span style={{ color: ROLE_ACCENT.consumer }} className="inline-flex">
+                <ArrowDownIcon size={14} aria-hidden />
+              </span>{" "}
+              consumer
+            </span>
             <span><span style={{ color: ROLE_ACCENT.both }}>◆</span> both</span>
             <span><span style={{ color: CONF_STROKE.high }}>━</span> high</span>
             <span><span style={{ color: CONF_STROKE.medium }}>━</span> medium</span>
@@ -576,7 +595,7 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
         {/* detail panel */}
         {selected && <div className="card w-full shrink-0 overflow-auto p-3 text-xs lg:w-72">
           {!selected && (
-            <p className="text-slate-400">
+            <p className="text-fg-muted">
               Click a node to inspect an API and highlight its upstream/downstream chain. Click an edge
               to see the correlation. Drag to pan, scroll to zoom.
             </p>
@@ -599,9 +618,9 @@ export function DependencyGraph({ analysisId }: { analysisId: string }) {
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
-    <div className="flex justify-between gap-2 border-b border-edge/40 py-1">
-      <span className="text-slate-400">{k}</span>
-      <span className="mono text-right text-slate-200 break-all">{v}</span>
+    <div className="flex justify-between gap-2 border-b border-line/40 py-1">
+      <span className="text-fg-muted">{k}</span>
+      <span className="mono text-right text-fg break-all">{v}</span>
     </div>
   );
 }
@@ -610,7 +629,7 @@ function NodeDetail({ node, onFocus }: { node: GraphNode; onFocus: () => void })
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-white">{node.name}</h4>
+        <h4 className="text-sm font-semibold text-fg">{node.name}</h4>
         <button className="btn-ghost px-2 py-0.5 text-[11px]" onClick={onFocus}>
           Focus
         </button>
@@ -619,11 +638,11 @@ function NodeDetail({ node, onFocus }: { node: GraphNode; onFocus: () => void })
       <Row k="Method" v={node.method} />
       <Row k="Path" v={node.path} />
       <Row k="Folder" v={node.folder} />
-      <Row k="Status" v={node.status_code ?? "—"} />
+      <Row k="Status" v={node.status_code ?? "-"} />
       <Row k="Role" v={node.role} />
       {node.produces.length > 0 && (
         <div>
-          <p className="mt-2 text-slate-400">Produces</p>
+          <p className="mt-2 text-fg-muted">Produces</p>
           {node.produces.map((v) => (
             <span key={v} className="badge badge-high mr-1 mt-1">{v}</span>
           ))}
@@ -631,7 +650,7 @@ function NodeDetail({ node, onFocus }: { node: GraphNode; onFocus: () => void })
       )}
       {node.consumes.length > 0 && (
         <div>
-          <p className="mt-2 text-slate-400">Consumes</p>
+          <p className="mt-2 text-fg-muted">Consumes</p>
           {node.consumes.map((v) => (
             <span key={v} className="badge badge-medium mr-1 mt-1">{v}</span>
           ))}
@@ -656,7 +675,7 @@ function EdgeDetail({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-white">Correlation</h4>
+        <h4 className="text-sm font-semibold text-fg">Correlation</h4>
         <button className="btn-ghost px-2 py-0.5 text-[11px]" onClick={onFocusVar}>
           Focus var
         </button>
@@ -664,8 +683,8 @@ function EdgeDetail({
       <Row k="Producer" v={s ? `#${s.index} ${s.name}` : edge.source} />
       <Row k="Consumer" v={t ? `#${t.index} ${t.name}` : edge.target} />
       {group.map((g, i) => (
-        <div key={g.id} className="mt-2 rounded border border-edge/60 p-2">
-          {group.length > 1 && <p className="text-[10px] text-slate-500">#{i + 1}</p>}
+        <div key={g.id} className="mt-2 rounded-[10px] border border-line/60 p-2">
+          {group.length > 1 && <p className="text-[10px] text-fg-subtle">#{i + 1}</p>}
           <Row k="Variable" v={`\${${g.variable}}`} />
           <Row k="Response key" v={g.response_key} />
           <Row k="Producer path" v={g.producer_path} />

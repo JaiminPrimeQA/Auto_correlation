@@ -2,26 +2,11 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const FIXTURES = path.join(__dirname, "fixtures");
-const SAMPLES = path.join(__dirname, "..", "..", "samples");
-
-// Criterion 1: the existing Newman-report upload keeps working.
-test("report mode: uploading two existing Newman reports reaches Run health", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: /upload existing newman reports/i }).click();
-  await page.locator("#file-input").setInputFiles([
-    path.join(SAMPLES, "order-flow-baseline.json"),
-    path.join(SAMPLES, "order-flow-comparison.json"),
-  ]);
-  await page.getByRole("button", { name: "Analyze" }).click();
-  await expect(page.getByRole("button", { name: "Run health" })).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText(/mode: two_run/)).toBeVisible();
-});
 
 // Criteria 10 and 12: a private destination is blocked, the failure stays on the
 // progress page with guidance, and Retry keeps the non-secret values.
 test("blocked destination fails with guidance and a working retry", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /run a postman collection/i }).click();
   await page.getByLabel("Collection file").setInputFiles(path.join(FIXTURES, "blocked-destination.postman_collection.json"));
   await page.getByRole("button", { name: /inspect collection/i }).click();
 
@@ -43,7 +28,6 @@ test("blocked destination fails with guidance and a working retry", async ({ pag
 // Criterion 3: missing variables are shown before any job exists.
 test("unresolved variables block the run until supplied", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /run a postman collection/i }).click();
   await page.getByLabel("Collection file").setInputFiles(path.join(FIXTURES, "checkout-demo.postman_collection.json"));
   await page.getByRole("button", { name: /inspect collection/i }).click();
   await expect(page.getByLabel("host")).toBeVisible();

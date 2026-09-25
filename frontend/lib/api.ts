@@ -373,6 +373,7 @@ export const api = {
   deleteExecutionJob: (id: string) =>
     send<void>(`/execution-jobs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   getAnalysis: (id: string) => request<AnalysisSummary>(`/analyses/${id}`),
+  deleteAnalysis: (id: string) => send<void>(`/analyses/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listExecutions: (id: string, run = "baseline") =>
     request<{ items: ExecutionSummary[]; total: number }>(
       `/analyses/${id}/executions?run=${run}&page_size=200`,

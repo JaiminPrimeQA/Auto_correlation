@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { setTokenProvider } from "@/lib/api";
 import { CALLBACK_PATH, getAccessToken, getCurrentUser, isAuthEnabled, signIn, signOut } from "@/lib/auth";
+import { AppHeader } from "@/components/AppHeader";
 
 type Status = { kind: "loading" } | { kind: "anonymous" } | { kind: "signed-in"; name: string | null };
 
@@ -37,27 +38,39 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (pathname === CALLBACK_PATH) return <>{children}</>;
 
   if (status.kind === "loading") {
-    return <p className="text-sm text-slate-400">Loading…</p>;
+    return (
+      <>
+        <AppHeader />
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <p className="text-sm text-fg-muted">Loading...</p>
+        </main>
+      </>
+    );
   }
 
   if (status.kind === "anonymous") {
     return (
-      <div className="card mx-auto max-w-md space-y-3 p-6 text-center">
-        <h1 className="text-lg font-semibold">Sign in to continue</h1>
-        <p className="text-sm text-slate-400">
-          Your collections, runs and analyses are private to your account.
-        </p>
-        <button className="btn w-full justify-center" onClick={() => signIn()}>
-          Sign in
-        </button>
-      </div>
+      <>
+        <AppHeader />
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <div className="card mx-auto max-w-md space-y-3 p-6 text-center">
+            <h1 className="text-lg font-semibold">Sign in to continue</h1>
+            <p className="text-sm text-fg-muted">
+              Your collections, runs and analyses are private to your account.
+            </p>
+            <button className="btn w-full justify-center" onClick={() => signIn()}>
+              Sign in
+            </button>
+          </div>
+        </main>
+      </>
     );
   }
 
   return (
     <>
       {status.name && (
-        <div className="mb-3 flex items-center justify-end gap-3 text-xs text-slate-400">
+        <div className="mb-3 flex items-center justify-end gap-3 text-xs text-fg-muted">
           <span>{status.name}</span>
           <button className="btn-ghost text-xs" onClick={() => signOut()}>
             Sign out

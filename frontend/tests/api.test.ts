@@ -101,4 +101,12 @@ describe("execution job status", () => {
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(502);
   });
+
+  it("deleteAnalysis sends DELETE /api/v1/analyses/{id}", async () => {
+    const fetchMock = stubFetch(204, undefined);
+    await api.deleteAnalysis("an_1");
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toMatch(/\/analyses\/an_1$/);
+    expect(init.method).toBe("DELETE");
+  });
 });
