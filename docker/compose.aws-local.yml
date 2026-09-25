@@ -1,0 +1,15 @@
+# Local stand-in for the AWS backend: a moto server (S3, SQS, DynamoDB) on a
+# private Docker network that the runner containers join.
+#   docker compose -f docker/compose.aws-local.yml up -d
+# Used by backend/tests/integration/test_aws_local_e2e.py (B11_RUN_AWS_LOCAL_TESTS=1).
+name: b11-aws-local
+services:
+  moto:
+    image: motoserver/moto:latest
+    container_name: b11-moto
+    ports:
+      - "127.0.0.1:5000:5000"
+    networks: [b11-aws-local]
+networks:
+  b11-aws-local:
+    name: b11-aws-local

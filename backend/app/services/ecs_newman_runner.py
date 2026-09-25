@@ -137,11 +137,25 @@ class EcsTaskLauncher:
 class DockerTaskLauncher:
     """Local stand-in for Fargate: runs the same runner image with local
     Docker and the same limits. Presigned URLs reach the container through
-    the process environment, not the docker command line."""
+    the process environment, not the docker command line.
 
-    def __init__(self, *, settings: Settings, image: str = "baseline11/newman-runner:6.2.2") -> None:
+    `network` / `url_host_rewrite` are for the local AWS end-to-end only: the
+    runner joins the Docker network where the moto S3 server runs, and the
+    presigned URLs' host is rewritten to that server's name there (moto does
+    not verify signatures; real S3 never sees a rewritten URL)."""
+
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        image: str = "baseline11/newman-runner:6.2.2",
+        network: str | None = None,
+        url_host_rewrite: tuple[str, str] | None = None,
+    ) -> None:
         self._settings = settings
         self._image = image
+        self._network = network
+        self._rewrite = url_host_rewrite
 
     def _docker(self, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -150,9 +164,14 @@ class DockerTaskLauncher:
         )
 
     def start(self, *, env: dict[str, str], name: str) -> str:
+        if self._rewrite:
+            old, new = self._rewrite
+            env = {k: v.replace(old, new, 1) if k.endswith("_URL") else v for k, v in env.items()}
         env_flags: list[str] = []
         for key in env:
             env_flags += ["--env", key]  # value inherited from the environment below
+        if self._network:
+            env_flags += ["--network", self._network]
         result = self._docker(
             "run", "--detach", "--name", name, "--read-only", "--tmpfs", "/tmp:rw,nosuid,size=128m",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
