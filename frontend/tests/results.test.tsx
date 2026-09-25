@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { NextStepCard } from "@/components/results/NextStepCard";
 import { ResultsHeader } from "@/components/results/ResultsHeader";
+import { HelpNote } from "@/components/HelpNote";
 import { makeSummary } from "./fixtures";
 
 const summary = makeSummary({
@@ -46,5 +47,14 @@ describe("NextStepCard", () => {
       busy={false} onAutoCorrelate={() => {}} onOpenTab={onOpen} />);
     fireEvent.click(screen.getByRole("button", { name: "Open Generate" }));
     expect(onOpen).toHaveBeenCalledWith("generate");
+  });
+});
+
+describe("HelpNote", () => {
+  it("is collapsed by default behind 'What is this page?'", () => {
+    render(<HelpNote title="Run health" steps={["It checks both runs."]} />);
+    const details = screen.getByText(/what is this page\?/i).closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText("It checks both runs.")).not.toBeVisible();
   });
 });
