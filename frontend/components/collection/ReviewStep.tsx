@@ -131,7 +131,7 @@ export function ReviewStep({
         {blocking && (
           <div className="rounded-[10px] bg-danger-soft p-3 text-sm">
             <p className="font-medium text-danger">Destination problems: the job will fail validation</p>
-            <ul className="mt-1 list-disc pl-5 text-slate-300">
+            <ul className="mt-1 list-disc pl-5 text-fg">
               {inspection.domain_warnings.map((w) => <li key={w}>{w}</li>)}
             </ul>
             <p className="mt-1 text-xs text-fg-muted">
@@ -142,7 +142,7 @@ export function ReviewStep({
         {inspection.unsupported_features.length > 0 && (
           <div className="rounded-[10px] bg-warn-soft p-3 text-sm">
             <p className="font-medium text-warn">Needs review, may not run as in Postman</p>
-            <ul className="mt-1 list-disc pl-5 text-slate-300">
+            <ul className="mt-1 list-disc pl-5 text-fg">
               {inspection.unsupported_features.map((u, i) => (
                 <li key={i}>{u.detail}{u.location ? <span className="text-fg-subtle"> ({u.location})</span> : null}</li>
               ))}

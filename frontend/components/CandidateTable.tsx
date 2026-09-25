@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { WarningIcon } from "@phosphor-icons/react";
 import { api, type Candidate } from "@/lib/api";
 import { ConfidenceBadge } from "./Badge";
 
@@ -51,7 +52,7 @@ export function CandidateTable({
         <select
           value={confidence}
           onChange={(e) => setConfidence(e.target.value)}
-          className="rounded bg-ink/60 px-2 py-1 text-xs"
+          className="rounded-[10px] bg-surface2 px-2 py-1 text-xs"
         >
           <option value="">all confidence</option>
           <option value="high">high</option>
@@ -62,15 +63,15 @@ export function CandidateTable({
           Accept all high
         </button>
       </div>
-      {msg && <p className="mb-2 rounded bg-ok/15 px-3 py-1.5 text-xs text-ok">{msg}</p>}
-      {candidates.length === 0 && <p className="text-sm text-slate-500">No candidates.</p>}
+      {msg && <p className="mb-2 rounded-[10px] bg-ok-soft px-3 py-1.5 text-xs text-ok">{msg}</p>}
+      {candidates.length === 0 && <p className="text-sm text-fg-subtle">No candidates.</p>}
       <div className="space-y-2">
         {candidates.map((c) => (
-          <div key={c.id} className="rounded border border-edge bg-ink/40">
+          <div key={c.id} className="rounded-[10px] border border-line bg-surface2">
             <div className="flex flex-wrap items-center gap-3 p-3">
               <ConfidenceBadge confidence={c.confidence} />
-              <span className="mono text-sm text-brand">${`{${c.variable_name}}`}</span>
-              <span className="text-xs text-slate-400">
+              <span className="mono text-sm text-accent-soft-ink">${`{${c.variable_name}}`}</span>
+              <span className="text-xs text-fg-muted">
                 {c.producer.location_type}:{c.producer.canonical_path} → {c.consumer_count} consumer(s)
               </span>
               <span className="ml-auto flex gap-2">
@@ -86,21 +87,21 @@ export function CandidateTable({
               </span>
             </div>
             {expanded === c.id && (
-              <div className="border-t border-edge px-3 py-2 text-xs">
+              <div className="border-t border-line px-3 py-2 text-xs">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div>
-                    <div className="text-slate-400">Extractor</div>
-                    <div className="mono text-slate-200">
+                    <div className="text-fg-muted">Extractor</div>
+                    <div className="mono text-fg">
                       {c.extractor_method}: {c.extractor_expression}
                     </div>
-                    <div className="mt-2 text-slate-400">Values (masked)</div>
+                    <div className="mt-2 text-fg-muted">Values (masked)</div>
                     <div className="mono">
                       A: {c.evidence.baseline_value_masked}
                       {c.evidence.comparison_value_masked && <> · B: {c.evidence.comparison_value_masked}</>}
                     </div>
                   </div>
                   <div>
-                    <div className="text-slate-400">Score {c.evidence.score}</div>
+                    <div className="text-fg-muted">Score {c.evidence.score}</div>
                     <ul className="mt-1 space-y-0.5 text-ok">
                       {c.evidence.factors.map((f, i) => (
                         <li key={i}>+ {f}</li>
@@ -116,14 +117,17 @@ export function CandidateTable({
                 {c.warnings.length > 0 && (
                   <ul className="mt-2 text-danger">
                     {c.warnings.map((w, i) => (
-                      <li key={i}>⚠ {w}</li>
+                      <li key={i} className="flex items-center gap-1">
+                        <WarningIcon size={14} aria-hidden />
+                        {w}
+                      </li>
                     ))}
                   </ul>
                 )}
                 <div className="mt-2">
-                  <div className="text-slate-400">Consumers</div>
+                  <div className="text-fg-muted">Consumers</div>
                   {c.consumers.map((con, i) => (
-                    <div key={i} className="mono text-slate-300">
+                    <div key={i} className="mono text-fg">
                       {con.execution_index + 1}. {con.location_type}:{con.canonical_path}
                       {con.wrapper ? ` (wrapped: ${con.wrapper.trim()})` : ""}
                     </div>

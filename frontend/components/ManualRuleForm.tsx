@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CheckIcon, WarningIcon } from "@phosphor-icons/react";
 import { api, type ExecutionSummary, type Occurrence } from "@/lib/api";
 
 function suggestExtractor(loc: string): { method: string; hint: string } {
@@ -168,13 +169,13 @@ export function ManualRuleForm({
       <h3 className="mb-3 text-sm font-semibold">Add correlation parameter</h3>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="text-xs text-slate-400">Producer request (response source)</label>
+          <label className="text-xs text-fg-muted">Producer request (response source)</label>
           <select
-            className="mt-1 w-full rounded bg-ink/60 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-[10px] bg-surface2 px-2 py-1.5 text-sm"
             value={producerExec}
             onChange={(e) => setProducerExec(e.target.value)}
           >
-            <option value="">select…</option>
+            <option value="">select...</option>
             {execs.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.index + 1}. {e.name}
@@ -186,37 +187,37 @@ export function ManualRuleForm({
               value={producerQuery}
               onChange={(e) => setProducerQuery(e.target.value)}
               placeholder="search by value: start/end/both, e.g. ed · f7 · edf7 · 30626"
-              className="mt-2 w-full rounded bg-ink/60 px-2 py-1 text-xs"
+              className="mt-2 w-full rounded-[10px] bg-surface2 px-2 py-1 text-xs"
             />
           )}
-          <div className="mt-1 max-h-40 overflow-auto rounded border border-edge">
+          <div className="mt-1 max-h-40 overflow-auto rounded-[10px] border border-line">
             {sources.filter((o) => occMatches(o, producerQuery)).map((o, i) => (
               <button
                 key={i}
                 onClick={() => pickProducer(o)}
                 className={`block w-full px-2 py-1 text-left text-xs ${
                   producer?.canonical_path === o.canonical_path && producer?.location_type === o.location_type
-                    ? "bg-brand/30"
-                    : "hover:bg-edge/40"
+                    ? "bg-accent-soft"
+                    : "hover:bg-surface2"
                 }`}
               >
                 <span className="mono">{o.location_type}:{o.canonical_path}</span>{" "}
-                <span className="text-slate-500">= {o.value_masked}</span>
+                <span className="text-fg-subtle">= {o.value_masked}</span>
               </button>
             ))}
             {sources.length > 0 && sources.filter((o) => occMatches(o, producerQuery)).length === 0 && (
-              <p className="px-2 py-1 text-xs text-slate-500">No values match “{producerQuery}”.</p>
+              <p className="px-2 py-1 text-xs text-fg-subtle">No values match "{producerQuery}".</p>
             )}
           </div>
         </div>
         <div>
-          <label className="text-xs text-slate-400">Consumer request (sink)</label>
+          <label className="text-xs text-fg-muted">Consumer request (sink)</label>
           <select
-            className="mt-1 w-full rounded bg-ink/60 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-[10px] bg-surface2 px-2 py-1.5 text-sm"
             value={consumerExec}
             onChange={(e) => setConsumerExec(e.target.value)}
           >
-            <option value="">select…</option>
+            <option value="">select...</option>
             {execs.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.index + 1}. {e.name}
@@ -228,26 +229,26 @@ export function ManualRuleForm({
               value={consumerQuery}
               onChange={(e) => setConsumerQuery(e.target.value)}
               placeholder="search by value: start/end/both, e.g. 6d · 77 · webhookID"
-              className="mt-2 w-full rounded bg-ink/60 px-2 py-1 text-xs"
+              className="mt-2 w-full rounded-[10px] bg-surface2 px-2 py-1 text-xs"
             />
           )}
-          <div className="mt-1 max-h-40 overflow-auto rounded border border-edge">
+          <div className="mt-1 max-h-40 overflow-auto rounded-[10px] border border-line">
             {sinks.filter((o) => occMatches(o, consumerQuery)).map((o, i) => (
               <button
                 key={i}
                 onClick={() => setConsumer(o)}
                 className={`block w-full px-2 py-1 text-left text-xs ${
                   consumer?.canonical_path === o.canonical_path && consumer?.location_type === o.location_type
-                    ? "bg-brand/30"
-                    : "hover:bg-edge/40"
+                    ? "bg-accent-soft"
+                    : "hover:bg-surface2"
                 }`}
               >
                 <span className="mono">{o.location_type}:{o.canonical_path}</span>{" "}
-                <span className="text-slate-500">= {o.value_masked}</span>
+                <span className="text-fg-subtle">= {o.value_masked}</span>
               </button>
             ))}
             {sinks.length > 0 && sinks.filter((o) => occMatches(o, consumerQuery)).length === 0 && (
-              <p className="px-2 py-1 text-xs text-slate-500">No values match “{consumerQuery}”.</p>
+              <p className="px-2 py-1 text-xs text-fg-subtle">No values match "{consumerQuery}".</p>
             )}
           </div>
         </div>
@@ -255,24 +256,25 @@ export function ManualRuleForm({
 
       {/* Auto-correlate panel: appears when a producer value is selected */}
       {producer && (
-        <div className="mt-3 rounded-lg border border-brand/40 bg-brand/5 p-3 text-xs">
-          {autoBusy && <p className="text-slate-400">Searching later requests for this value…</p>}
+        <div className="mt-3 rounded-[10px] border border-accent/40 bg-accent-soft p-3 text-xs">
+          {autoBusy && <p className="text-fg-muted">Searching later requests for this value...</p>}
           {!autoBusy && autoFind && autoFind.consumers.length > 0 && (
             <>
-              <p className="text-ok">
-                ✓ This value is reused in <b>{autoFind.consumers.length}</b> later request(s) — it can be
+              <p className="flex items-center gap-1 text-ok">
+                <CheckIcon size={14} aria-hidden />
+                This value is reused in <b>{autoFind.consumers.length}</b> later request(s), it can be
                 auto-correlated:
               </p>
               <ul className="mt-1 space-y-0.5">
                 {autoFind.consumers.map((c, i) => (
-                  <li key={i} className="text-slate-300">
+                  <li key={i} className="text-fg">
                     → #{c.request_index + 1} {c.request_name.split("/").pop()} ·{" "}
                     <span className="mono">{c.location_type}:{c.key || c.canonical_path}</span>
-                    {c.wrapper && <span className="text-slate-500"> (wraps as “{c.wrapper}…”)</span>}
+                    {c.wrapper && <span className="text-fg-subtle"> (wraps as "{c.wrapper}...")</span>}
                   </li>
                 ))}
               </ul>
-              <p className="mt-1 text-slate-500">
+              <p className="mt-1 text-fg-subtle">
                 extractor <span className="mono">{autoFind.suggested_extractor}</span> ·{" "}
                 <span className="mono">{autoFind.suggested_expression}</span>
               </p>
@@ -282,54 +284,55 @@ export function ManualRuleForm({
             </>
           )}
           {!autoBusy && autoFind && autoFind.name_matches.length > 0 && (
-            <div className={autoFind.consumers.length > 0 ? "mt-3 border-t border-edge pt-2" : ""}>
-              <p className="text-warn">
-                ⚠ Also found <b>{autoFind.name_matches.length}</b> later request(s) with a matching{" "}
-                <b>field name</b> but a different captured value — likely correlations too (this replaces a
+            <div className={autoFind.consumers.length > 0 ? "mt-3 border-t border-line pt-2" : ""}>
+              <p className="flex items-center gap-1 text-warn">
+                <WarningIcon size={14} aria-hidden />
+                Also found <b>{autoFind.name_matches.length}</b> later request(s) with a matching{" "}
+                <b>field name</b> but a different captured value, likely correlations too (this replaces a
                 hardcoded value with the real one). Review before trusting:
               </p>
               <ul className="mt-1 space-y-0.5">
                 {autoFind.name_matches.map((c, i) => (
-                  <li key={i} className="text-slate-300">
+                  <li key={i} className="text-fg">
                     → #{c.request_index + 1} {c.request_name.split("/").pop()} ·{" "}
                     <span className="mono">{c.location_type}:{c.key || c.canonical_path}</span>{" "}
-                    <span className="text-slate-500">
-                      (“{c.producer_field}” ≈ “{c.consumer_field}”)
+                    <span className="text-fg-subtle">
+                      ("{c.producer_field}" ≈ "{c.consumer_field}")
                     </span>
                   </li>
                 ))}
               </ul>
-              <button className="btn-ghost mt-2 border border-warn/50 text-warn" onClick={autoCreateByName}>
+              <button className="btn-ghost mt-2 text-warn" onClick={autoCreateByName}>
                 Correlate by field name (review) → {autoFind.name_matches.length} request(s)
               </button>
             </div>
           )}
           {!autoBusy && autoFind && autoFind.consumers.length === 0 && autoFind.name_matches.length === 0 && (
             <p className="text-warn">
-              No later request uses this value (by exact match or field name), so it isn’t a correlation.
-              It’s likely an input (parameter) or a credential — handle it via a User Defined Variable /
+              No later request uses this value (by exact match or field name), so it isn't a correlation.
+              It's likely an input (parameter) or a credential: handle it via a User Defined Variable /
               property instead.
             </p>
           )}
           {!autoBusy && autoFind?.is_noise_source && (
-            <p className="mt-1 text-slate-500">Note: this response header is usually infrastructure noise.</p>
+            <p className="mt-1 text-fg-subtle">Note: this response header is usually infrastructure noise.</p>
           )}
         </div>
       )}
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <div>
-          <label className="text-xs text-slate-400">Variable name</label>
+          <label className="text-xs text-fg-muted">Variable name</label>
           <input
-            className="mono mt-1 w-full rounded bg-ink/60 px-2 py-1.5 text-sm"
+            className="mono mt-1 w-full rounded-[10px] bg-surface2 px-2 py-1.5 text-sm"
             value={variable}
             onChange={(e) => setVariable(e.target.value)}
           />
         </div>
         <div>
-          <label className="text-xs text-slate-400">Extractor</label>
+          <label className="text-xs text-fg-muted">Extractor</label>
           <select
-            className="mt-1 w-full rounded bg-ink/60 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-[10px] bg-surface2 px-2 py-1.5 text-sm"
             value={method}
             onChange={(e) => setMethod(e.target.value)}
           >
@@ -341,9 +344,9 @@ export function ManualRuleForm({
           </select>
         </div>
         <div>
-          <label className="text-xs text-slate-400">Expression</label>
+          <label className="text-xs text-fg-muted">Expression</label>
           <input
-            className="mono mt-1 w-full rounded bg-ink/60 px-2 py-1.5 text-sm"
+            className="mono mt-1 w-full rounded-[10px] bg-surface2 px-2 py-1.5 text-sm"
             value={expr}
             onChange={(e) => setExpr(e.target.value)}
           />
@@ -351,11 +354,11 @@ export function ManualRuleForm({
       </div>
 
       {errors.map((e, i) => (
-        <p key={i} className="mt-2 rounded bg-danger/15 px-3 py-2 text-xs text-danger">
+        <p key={i} className="mt-2 rounded-[10px] bg-danger-soft px-3 py-2 text-xs text-danger">
           {e}
         </p>
       ))}
-      {ok && <p className="mt-2 rounded bg-ok/15 px-3 py-2 text-xs text-ok">{ok}</p>}
+      {ok && <p className="mt-2 rounded-[10px] bg-ok-soft px-3 py-2 text-xs text-ok">{ok}</p>}
 
       <button className="btn mt-3" onClick={submit}>
         Create rule

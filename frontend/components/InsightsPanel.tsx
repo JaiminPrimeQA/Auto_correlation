@@ -37,8 +37,8 @@ export function InsightsPanel({ analysisId }: { analysisId: string }) {
           <button
             key={f.id}
             onClick={() => setFilter(f.id)}
-            className={`rounded px-2 py-1 text-xs ${
-              filter === f.id ? "bg-brand text-white" : "bg-ink/60 text-slate-300 hover:text-white"
+            className={`rounded-[10px] px-2 py-1 text-xs ${
+              filter === f.id ? "bg-accent text-accent-ink" : "bg-surface2 text-fg hover:text-fg"
             }`}
           >
             {f.label}
@@ -46,9 +46,9 @@ export function InsightsPanel({ analysisId }: { analysisId: string }) {
         ))}
       </div>
 
-      {busy && <p className="text-xs text-slate-400">Loading…</p>}
+      {busy && <p className="text-xs text-fg-muted">Loading...</p>}
       {!busy && items.length === 0 && (
-        <p className="text-xs text-slate-400">No values in this category.</p>
+        <p className="text-xs text-fg-muted">No values in this category.</p>
       )}
 
       <div className="space-y-2">
@@ -57,29 +57,29 @@ export function InsightsPanel({ analysisId }: { analysisId: string }) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <ClassificationBadge classification={i.classification} />
-                <span className="mono text-slate-200">
+                <span className="mono text-fg">
                   {i.location.location_type}: {i.location.key || i.location.canonical_path}
                 </span>
                 {i.occurrence_count > 1 && (
-                  <span className="text-slate-500">×{i.occurrence_count} requests</span>
+                  <span className="text-fg-subtle">×{i.occurrence_count} requests</span>
                 )}
               </div>
               {i.differs_across_runs && (
-                <span className="rounded bg-ink/60 px-2 py-0.5 text-slate-400">changed across runs</span>
+                <span className="rounded-full bg-surface2 px-2 py-0.5 text-fg-muted">changed across runs</span>
               )}
             </div>
-            <div className="mt-2 flex flex-wrap gap-4 text-slate-400">
+            <div className="mt-2 flex flex-wrap gap-4 text-fg-muted">
               <span>
-                Run A: <span className="mono text-slate-300">{i.value_a_masked || "—"}</span>
+                Run A: <span className="mono text-fg">{i.value_a_masked || "-"}</span>
               </span>
               {i.value_b_masked != null && (
                 <span>
-                  Run B: <span className="mono text-slate-300">{i.value_b_masked || "—"}</span>
+                  Run B: <span className="mono text-fg">{i.value_b_masked || "-"}</span>
                 </span>
               )}
             </div>
-            <p className="mt-2 text-slate-300">{i.reason}</p>
-            <p className="mt-1 text-slate-500">→ {i.recommended_handling}</p>
+            <p className="mt-2 text-fg">{i.reason}</p>
+            <p className="mt-1 text-fg-subtle">→ {i.recommended_handling}</p>
           </div>
         ))}
       </div>
