@@ -68,7 +68,7 @@ test("collection mode: two real runs through to a validated JMX", async ({ page 
     await input.fill(SECRET);
   }
   await page.getByRole("button", { name: "Validate with JMeter" }).click();
-  await expect(page.getByText(/validated jmx — jmeter executed the plan successfully/i)).toBeVisible({
+  await expect(page.getByText(/validated jmx: jmeter executed the plan successfully/i)).toBeVisible({
     timeout: 4 * 60_000,
   });
 
