@@ -22,7 +22,7 @@ from ..utils.naming import (
     suggest_variable_name,
 )
 from .consumer_finder import _field_name, is_correlatable_source
-from .correlation_engine import _extractor_for, _is_excluded, _match_consumer, _response_usable
+from .correlation_engine import _extractor_for, _is_excluded, _match_consumer, _resource_id_path_match, _response_usable
 from .header_policy import is_correlation_target
 from .value_indexer import index_request_sinks, index_response_sources
 
@@ -72,7 +72,11 @@ def auto_correlate(run: NormalizedRun, settings: Settings) -> list[CorrelationRu
                     and fields_are_equivalent(_field_name(src), _field_name(sink))
                     and normalize_field_name(_field_name(src)).endswith(("id", "guid", "uuid"))
                 )
-                if matched and (not _is_excluded(src, settings) or named_identifier):
+                if matched and (
+                    not _is_excluded(src, settings)
+                    or named_identifier
+                    or _resource_id_path_match(src, sink, execution)
+                ):
                     candidates.append((src, wrapper))
             if candidates:
                 src, wrapper = candidates[0]

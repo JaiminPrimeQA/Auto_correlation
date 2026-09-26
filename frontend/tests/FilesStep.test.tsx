@@ -20,6 +20,14 @@ function choose(label: RegExp, file: File) {
 }
 
 describe("FilesStep", () => {
+  it("accepts the file dropped on the advertised upload area", () => {
+    render(<FilesStep onInspected={() => {}} />);
+    const collection = jsonFile("dropped.postman_collection.json");
+    const zone = screen.getByLabelText(/collection file/i).closest("label")!;
+    fireEvent.drop(zone, { dataTransfer: { files: [collection] } });
+    expect(screen.getByText(collection.name)).toBeVisible();
+    expect(screen.getByRole("button", { name: /inspect collection/i })).toBeEnabled();
+  });
   it("cannot inspect until a collection is chosen", () => {
     render(<FilesStep onInspected={() => {}} />);
     expect(screen.getByRole("button", { name: /how we handle your data/i })).toBeInTheDocument();

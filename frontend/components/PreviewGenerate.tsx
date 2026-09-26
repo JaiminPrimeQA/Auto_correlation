@@ -34,6 +34,16 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requiredProperties: string[] = generated?.manifest.secret_handling?.required_properties || [];
+  const missingSecrets = requiredProperties.filter((name) => !secrets[name]?.trim());
+
+  function changeOptions(next: typeof opts) {
+    setOpts(next);
+    setGenerated(null);
+    setResult(null);
+    setValidation(null);
+    setSecrets({});
+  }
 
   async function doPreview() {
     setBusy(true);
@@ -60,6 +70,7 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
     }
   }
   async function doValidate() {
+    if (busy || missingSecrets.length) return;
     setBusy(true);
     setError(null);
     try {
@@ -67,6 +78,7 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      setSecrets({});
       setBusy(false);
     }
   }
@@ -74,14 +86,14 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
   return (
     <div className="card p-4">
       <h3 className="mb-3 text-sm font-semibold">Preview & generate ({ruleCount} rules)</h3>
-      <div className="flex flex-wrap gap-4 text-xs">
+      <fieldset disabled={busy} className="flex flex-wrap gap-4 text-xs">
         <label className="flex items-center gap-1">
           threads
           <input
             type="number"
             min={1}
             value={opts.num_threads}
-            onChange={(e) => setOpts({ ...opts, num_threads: +e.target.value })}
+            onChange={(e) => changeOptions({ ...opts, num_threads: +e.target.value })}
             className="w-16 rounded-[10px] bg-surface2 px-2 py-1"
           />
         </label>
@@ -91,7 +103,7 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
             type="number"
             min={1}
             value={opts.loops}
-            onChange={(e) => setOpts({ ...opts, loops: +e.target.value })}
+            onChange={(e) => changeOptions({ ...opts, loops: +e.target.value })}
             className="w-16 rounded-[10px] bg-surface2 px-2 py-1"
           />
         </label>
@@ -99,7 +111,7 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
           <input
             type="checkbox"
             checked={opts.parameterize_host}
-            onChange={(e) => setOpts({ ...opts, parameterize_host: e.target.checked })}
+            onChange={(e) => changeOptions({ ...opts, parameterize_host: e.target.checked })}
           />
           parameterize host
         </label>
@@ -107,7 +119,7 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
           <input
             type="checkbox"
             checked={opts.include_cache_manager}
-            onChange={(e) => setOpts({ ...opts, include_cache_manager: e.target.checked })}
+            onChange={(e) => changeOptions({ ...opts, include_cache_manager: e.target.checked })}
           />
           cache manager
         </label>
@@ -115,7 +127,7 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
           <input
             type="checkbox"
             checked={opts.keep_user_agent}
-            onChange={(e) => setOpts({ ...opts, keep_user_agent: e.target.checked })}
+            onChange={(e) => changeOptions({ ...opts, keep_user_agent: e.target.checked })}
           />
           keep User-Agent
         </label>
@@ -123,11 +135,11 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
           <input
             type="checkbox"
             checked={opts.include_static_secrets}
-            onChange={(e) => setOpts({ ...opts, include_static_secrets: e.target.checked })}
+            onChange={(e) => changeOptions({ ...opts, include_static_secrets: e.target.checked })}
           />
           embed static secrets (opt-in)
         </label>
-      </div>
+      </fieldset>
 
       <div className="mt-3 flex gap-2">
         <button className="btn-ghost" onClick={doPreview} disabled={busy}>
@@ -222,7 +234,8 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
             </p>
             {(generated.manifest.secret_handling?.required_properties || []).length > 0 && (
               <div className="mt-2 space-y-1">
-                <p className="text-fg-muted">Supply runtime secrets (passed as -Jname=value, never stored):</p>
+                <p className="text-fg-muted">Enter each required credential. Values are cleared after validation and supplied through a temporary properties file.</p>
+                <p className="text-fg-muted">For Authorization, enter the complete header value: Basic followed by the encoded key pair, or Bearer followed by the token. Use the same format as your successful Postman request.</p>
                 {generated.manifest.secret_handling.required_properties.map((p: string) => (
                   <label key={p} className="flex items-center gap-2">
                     <span className="mono w-40 text-fg-muted">{p}</span>
@@ -237,7 +250,9 @@ export function PreviewGenerate({ analysisId, ruleCount }: { analysisId: string;
                 ))}
               </div>
             )}
-            <button className="btn mt-2" onClick={doValidate} disabled={busy}>
+            {missingSecrets.length > 0 && <p role="status" className="mt-2 text-warn">Required before validation: {missingSecrets.join(", ")}</p>}
+            <p className="mt-2 text-fg-muted">Validation sends real requests again. Start with one thread and one loop. Hosted deployments currently require you to download and validate the plan in your own JMeter environment.</p>
+            <button className="btn mt-2" onClick={doValidate} disabled={busy || missingSecrets.length > 0}>
               {busy ? "Running JMeter..." : "Validate with JMeter"}
             </button>
           </div>

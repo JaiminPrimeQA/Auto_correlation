@@ -118,7 +118,7 @@ function Results({
                 <button
                   className="btn"
                   onClick={handleAutoCorrelate}
-                  disabled={autoBusy || summary.auto_correlation_status === "running" || summary.auto_correlation_status === "completed"}
+                  disabled={summary.blocked || autoBusy || summary.auto_correlation_status === "running" || summary.auto_correlation_status === "completed"}
                 >
                   {autoBusy ? (
                     "Correlating..."
@@ -265,7 +265,7 @@ export default function Page() {
 
   return (
     <ToastProvider>
-      <AppHeader right={<button className="btn-ghost" onClick={newAnalysis}>New analysis</button>} />
+      <AppHeader right={<button className="btn-ghost whitespace-nowrap" onClick={newAnalysis}>New analysis</button>} />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {!summary ? (
           <CollectionWizard key={wizardKey} onDone={(s, job) => openAnalysis(s, job)} onJobCreated={setJobId} />

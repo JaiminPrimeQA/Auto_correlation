@@ -23,8 +23,10 @@ from app.main import create_app  # noqa: E402
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8088)
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "samples")
     args = parser.parse_args()
-    samples = ROOT / "samples"
+    samples = args.output_dir.resolve()
+    samples.mkdir(parents=True, exist_ok=True)
     reports = [samples / "webhook-baseline.json", samples / "webhook-comparison.json"]
     source = samples / "webhook-demo.postman_collection.json"
     source.write_text(json.dumps(collection(args.port), indent=2), encoding="utf-8")

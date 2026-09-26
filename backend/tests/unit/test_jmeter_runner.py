@@ -64,6 +64,17 @@ def test_validation_failed_when_variable_never_extracted(tmp_path):
     assert rep.variables_missing == ["token"]
 
 
+@pytest.mark.parametrize("value", ["__NOT_FOUND__", "${token}"])
+def test_one_successful_extraction_does_not_hide_a_later_failure(tmp_path, value):
+    jtl = _jtl(tmp_path, [
+        "1,10,First login,200,OK,true,,live-token",
+        f"2,10,Second login,200,OK,true,,{value}",
+    ])
+    rep = _build_report(RunOutcome(True, 0, False, jtl, None, "", ""), _report(), ["token"], Settings())
+    assert rep.status == "validation_failed"
+    assert rep.variables_missing == ["token"]
+
+
 def test_assertion_failures_block_validation(tmp_path):
     jtl = _jtl(tmp_path, ["1,10,01 X,200,OK,false,Assertion failed: body,tok"])
     outcome = RunOutcome(True, 0, False, jtl, None, "", "")
@@ -103,6 +114,66 @@ def test_disabled_jmeter_is_faithful():
     assert rep.status == "validation_failed"
     assert rep.executed is False
     assert any("not available" in r for r in rep.reasons)
+
+
+@pytest.mark.parametrize("values", [{}, {"Authorization": "  "}])
+def test_missing_credentials_do_not_launch_jmeter(monkeypatch, values):
+    def must_not_run(*args, **kwargs):
+        pytest.fail("JMeter must not execute with missing credentials")
+
+    monkeypatch.setattr(jmeter_runner, "resolve_jmeter_launcher", lambda _: ["jmeter"])
+    monkeypatch.setattr(jmeter_runner, "_execute", must_not_run)
+    report = jmeter_runner.run_plan(
+        "<x/>", correlation_variables=[], required_properties=["Authorization"],
+        property_values=values, settings=Settings(),
+    )
+    assert not report.executed
+    assert report.status == "validation_failed"
+    assert any("Authorization" in reason for reason in report.reasons)
+
+
+def test_shared_production_api_cannot_execute_unisolated_jmeter(monkeypatch):
+    monkeypatch.setattr(jmeter_runner, "resolve_jmeter_launcher", lambda _: ["jmeter"])
+    def must_not_run(*args, **kwargs):
+        pytest.fail("Production validation needs an isolated execution worker")
+    monkeypatch.setattr(jmeter_runner, "_execute", must_not_run)
+    report = jmeter_runner.run_plan(
+        "<x/>", correlation_variables=[], required_properties=[], property_values={},
+        settings=Settings(environment="production"),
+    )
+    assert not report.executed
+    assert any("isolated" in reason for reason in report.reasons)
+
+
+def test_validation_diagnostics_redact_supplied_secret(tmp_path, monkeypatch):
+    secret = "runtime-secret-123456"
+    jtl = _jtl(tmp_path, [f"1,10,Request {secret},401,{secret},false,{secret},"])
+    log = tmp_path / "jmeter.log"
+    log.write_text(f"ERROR credential={secret}", encoding="utf-8")
+    monkeypatch.setattr(jmeter_runner, "resolve_jmeter_launcher", lambda _: ["jmeter"])
+    monkeypatch.setattr(jmeter_runner, "_execute", lambda *args: RunOutcome(True, 0, False, jtl, log, "", ""))
+    report = jmeter_runner.run_plan(
+        "<x/>", correlation_variables=[], required_properties=["Authorization"],
+        property_values={"Authorization": secret}, settings=Settings(),
+    )
+    assert secret not in report.model_dump_json()
+
+
+def test_runtime_credentials_use_a_property_file_not_process_arguments(tmp_path, monkeypatch):
+    secret = ' space&percent%quote"\\newline\n秘密'
+    def fake_run(cmd, **kwargs):
+        assert secret not in " ".join(cmd)
+        assert "-q" in cmd
+        contents = Path(cmd[cmd.index("-q") + 1]).read_text("ascii")
+        import re
+        encoded = contents.split("=", 1)[1].strip()
+        units = re.findall(r"\\u([0-9a-f]{4})", encoded)
+        assert bytes.fromhex("".join(units)).decode("utf-16-be") == secret
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(jmeter_runner.subprocess, "run", fake_run)
+    result = jmeter_runner._execute(["jmeter"], "<x/>", [], {"Authorization": secret}, tmp_path, Settings())
+    assert result.executed
 
 
 def test_timeout_with_truncated_multibyte_stdout_does_not_crash(tmp_path, monkeypatch):

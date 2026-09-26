@@ -3,6 +3,7 @@ from app.domain.enums import Confidence, LocationType
 from app.services.correlation_engine import CorrelationEngine
 from app.services.normalizer import normalize_run
 from app.services.run_aligner import align_runs
+from tests.fixtures import builders as b
 from tests.fixtures import scenarios
 
 
@@ -12,6 +13,19 @@ def _pair(scenario):
     comp = normalize_run(scenario("comparison"), filename="c.json", settings=s)
     alignment = align_runs(base, comp)
     return base, comp, alignment, s
+
+
+def test_short_booking_id_is_detected_across_two_runs():
+    def scenario(role):
+        identifier = 43 if role == "baseline" else 57
+        return b.report("Booking", [
+            b.execution("Create", "POST", "https://api.test/booking", resp_body={"bookingid": identifier}, position=0),
+            b.execution("Get", "GET", f"https://api.test/booking/{identifier}", position=1),
+        ])
+    base, comp, alignment, settings = _pair(scenario)
+    candidates = CorrelationEngine(settings).analyze_two_run(base, comp, alignment)
+    assert len(candidates) == 1
+    assert candidates[0].variable_name == "bookingid"
 
 
 def test_login_token_detected_high_confidence():

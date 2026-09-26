@@ -1,7 +1,7 @@
 """Execute a generated plan with Apache JMeter 5.6.3 and parse the results.
 
 A plan becomes 'Validated' only after JMeter actually runs it here. External
-secrets are passed as JMeter properties (-Jname=value) and never written into
+secrets are passed through a temporary JMeter properties file and never written into
 the plan. Correlation variables are proven extracted via ``sample_variables``,
 which makes JMeter write each variable's per-sample value into the JTL.
 
@@ -55,7 +55,7 @@ def _repo_root() -> Path:
 
 def resolve_jmeter_launcher(settings: Settings) -> list[str] | None:
     """Return the command prefix that launches JMeter, or None if unavailable."""
-    if settings.jmeter_mode == "disabled":
+    if settings.is_production or settings.jmeter_mode == "disabled":
         return None
     if settings.jmeter_mode == "docker":
         if shutil.which("docker"):
@@ -101,12 +101,26 @@ def run_plan(
     property_values: dict[str, str],
     settings: Settings,
 ) -> JMeterValidationReport:
-    launcher = resolve_jmeter_launcher(settings)
     report = JMeterValidationReport(
         correlation_variables=list(correlation_variables),
         required_properties=list(required_properties),
-        properties_supplied=sorted(property_values.keys()),
+        properties_supplied=sorted(k for k, v in property_values.items() if v.strip()),
     )
+    # Uploaded reports can name arbitrary targets and JMeter expressions. The
+    # local runner has no network sandbox; never expose it on the hosted API.
+    if settings.is_production:
+        report.status = JmxStatus.VALIDATION_FAILED.value
+        report.reasons.append(
+            "Hosted JMeter validation requires an isolated execution worker, which is not configured. "
+            "Download the generated JMX and validate it in your own JMeter environment."
+        )
+        return report
+    missing = [p for p in required_properties if not property_values.get(p, "").strip()]
+    if missing:
+        report.status = JmxStatus.VALIDATION_FAILED.value
+        report.reasons.append("Supply the required runtime credentials before validation: " + ", ".join(missing))
+        return report
+    launcher = resolve_jmeter_launcher(settings)
     if launcher is None:
         report.status = JmxStatus.VALIDATION_FAILED.value
         report.reasons.append(
@@ -117,7 +131,23 @@ def run_plan(
     workdir = Path(tempfile.mkdtemp(prefix="b11_jmeter_"))
     try:
         outcome = _execute(launcher, jmx_xml, correlation_variables, property_values, workdir, settings)
-        return _build_report(outcome, report, correlation_variables, settings)
+        result = _build_report(outcome, report, correlation_variables, settings)
+        # JMeter diagnostics can echo request data. Scrub submitted credentials
+        # before returning or retaining the validation report.
+        secrets = sorted({v for v in property_values.values() if v}, key=len, reverse=True)
+
+        def redact(value):
+            if isinstance(value, str):
+                for secret in secrets:
+                    value = value.replace(secret, "[REDACTED]")
+                return value
+            if isinstance(value, list):
+                return [redact(item) for item in value]
+            if isinstance(value, dict):
+                return {key: redact(item) for key, item in value.items()}
+            return value
+
+        return JMeterValidationReport.model_validate(redact(result.model_dump()))
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -149,8 +179,17 @@ def _execute(
         ]
     if sample_variables:
         cmd.append("-Jsample_variables=" + ",".join(sanitize_variable_name(v) for v in sample_variables))
-    for k, v in props.items():
-        cmd.append(f"-J{k}={v}")
+    if props:
+        # Java Properties unicode escapes preserve whitespace, newlines,
+        # backslashes and non-ASCII values without shell interpolation.
+        property_path = workdir / "runtime.properties"
+        fd = os.open(property_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="ascii") as stream:
+            for k, v in props.items():
+                units = v.encode("utf-16-be").hex()
+                escaped = "".join("\\u" + units[i:i + 4] for i in range(0, len(units), 4))
+                stream.write(f"{k}={escaped}\n")
+        cmd.extend(["-q", "/work/runtime.properties" if docker else str(property_path)])
 
     try:
         completed = subprocess.run(
@@ -204,6 +243,7 @@ def _build_report(
 
     rows = _parse_jtl(outcome.jtl_path) if outcome.jtl_path else []
     var_seen: set[str] = set()
+    var_failed: set[str] = set()
     for row in rows:
         success = str(row.get("success", "")).strip().lower() == "true"
         failure = (row.get("failureMessage") or "").strip()
@@ -219,7 +259,9 @@ def _build_report(
             report.assertion_failures += 1
         for var in correlation_variables:
             val = (row.get(var) or "").strip()
-            if val and val != _DEFAULT_SENTINEL:
+            if val in (_DEFAULT_SENTINEL, "${" + var + "}"):
+                var_failed.add(var)
+            elif val:
                 var_seen.add(var)
 
     report.samplers_total = len(rows)
@@ -227,7 +269,7 @@ def _build_report(
     report.samplers_failed = report.samplers_total - report.samplers_success
     report.error_ratio = round(report.samplers_failed / report.samplers_total, 4) if report.samplers_total else 0.0
     report.variables_extracted = [v for v in correlation_variables if v in var_seen]
-    report.variables_missing = [v for v in correlation_variables if v not in var_seen]
+    report.variables_missing = [v for v in correlation_variables if v not in var_seen or v in var_failed]
     report.log_errors = _scan_log(outcome.log_path) if outcome.log_path else []
 
     _decide_status(report, outcome, settings)
@@ -288,7 +330,7 @@ def _decide_status(report: JMeterValidationReport, outcome: RunOutcome, settings
     if report.variables_missing and not connection_failed:
         ok = False
         reasons.append(
-            "Correlation variable(s) were never extracted at runtime: "
+            "Correlation variable(s) were missing or extraction failed during the run: "
             + ", ".join(report.variables_missing)
         )
     if ok:

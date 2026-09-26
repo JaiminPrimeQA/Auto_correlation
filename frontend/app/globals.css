@@ -38,6 +38,11 @@
   --graph-produce: 47 91 234;
   --graph-consume: 124 58 237;
 
+  /* Brand logo (components/Logo.tsx): the supplied light-theme colours. */
+  --logo-ink: 23 21 138;
+  --logo-accent: 3 110 216;
+  --logo-needle: 0 0 41;
+
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --dur-press: 140ms;
@@ -80,6 +85,11 @@
   --graph-edge-low: 138 146 158;
   --graph-produce: 123 155 255;
   --graph-consume: 196 167 255;
+
+  /* The navy wordmark and needle vanish on dark surfaces: lighter, same hues. */
+  --logo-ink: 222 226 255;
+  --logo-accent: 92 170 255;
+  --logo-needle: 236 238 242;
 }
 
 html,

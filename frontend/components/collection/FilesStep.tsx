@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileArrowUpIcon } from "@phosphor-icons/react";
 import { api, type CollectionInspection } from "@/lib/api";
 import { PrivacyNote } from "@/components/PrivacyNote";
+import { SampleWalkthrough } from "./SampleWalkthrough";
 
 export interface CollectionFiles {
   collection: File;
@@ -23,6 +24,12 @@ function DropZone({
       </span>
       <label
         htmlFor={id}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          const dropped = event.dataTransfer.files[0];
+          if (dropped) onPick(dropped);
+        }}
         className={`focus-within:ring-accent/30 flex cursor-pointer items-center gap-3.5 rounded-[10px] border-[1.5px] p-4 transition-colors duration-150 focus-within:ring-[3px] ${
           file ? "border-solid border-accent/40 bg-accent-soft/40" : "border-dashed border-line-strong bg-surface2 hover:border-accent"
         }`}
@@ -87,6 +94,7 @@ export function FilesStep({
   }
 
   return (
+    <>
     <div className="grid items-start gap-10 lg:grid-cols-[1fr_1.05fr]">
       <div className="rise">
         <h1 style={{ "--i": 0 } as React.CSSProperties} className="mb-3 max-w-[16ch] text-[32px] font-semibold leading-[1.12] tracking-[-0.03em]">
@@ -94,7 +102,7 @@ export function FilesStep({
         </h1>
         <p style={{ "--i": 1 } as React.CSSProperties} className="mb-6 max-w-[44ch] text-[15px] leading-relaxed text-fg-muted">
           Upload your collection. We run it twice in an isolated sandbox, find the values that change between runs,
-          and wire them into a ready-to-run test plan.
+          and wire them into a test plan you can review, supply credentials for, and validate.
         </p>
         <ol style={{ "--i": 2 } as React.CSSProperties} className="space-y-3.5">
           {HOW.map(([title, text], i) => (
@@ -129,5 +137,7 @@ export function FilesStep({
         </div>
       </div>
     </div>
+    <SampleWalkthrough />
+    </>
   );
 }

@@ -125,6 +125,50 @@ def test_all_401_is_blocked(client):
     assert all(c["confidence"] != "high" for c in cands["items"])
 
 
+@pytest.mark.parametrize("action", ["auto-correlate", "candidates/accept-high"])
+def test_unhealthy_runs_cannot_claim_automatic_correlation(client, action):
+    created = client.post("/api/v1/analyses", files=_files(scenarios.scenario_all_401))
+    aid = created.json()["analysis_id"]
+    response = client.post(f"/api/v1/analyses/{aid}/{action}")
+    assert response.status_code == 422, response.text
+    assert "health" in response.json()["detail"].lower()
+    summary = client.get(f"/api/v1/analyses/{aid}").json()
+    assert summary["auto_correlation_status"] != "completed"
+
+
+def test_regeneration_clears_the_previous_validation(client):
+    from app.api.deps import get_store
+    response = client.post("/api/v1/analyses", files=_files(scenarios.scenario_login_token))
+    aid = response.json()["analysis_id"]
+    client.post(f"/api/v1/analyses/{aid}/generate", json={})
+    analysis = get_store().get(aid)
+    analysis.validation_report = {"status": "validated", "samplers_total": 2}
+    analysis.jmx_status = "validated"
+    assert client.post(f"/api/v1/analyses/{aid}/generate", json={"loops": 2}).status_code == 200
+    status = client.get(f"/api/v1/analyses/{aid}/validation").json()
+    assert status["jmx_status"] == "generated"
+    assert status["report"] is None
+
+
+def test_inflight_validation_cannot_validate_a_replaced_plan(client, monkeypatch):
+    from app.api.deps import get_store
+    from app.domain.models import JMeterValidationReport
+    from app.services import jmeter_runner
+    aid = client.post("/api/v1/analyses", files=_files(scenarios.scenario_login_token)).json()["analysis_id"]
+    client.post(f"/api/v1/analyses/{aid}/generate", json={})
+    analysis = get_store().get(aid)
+
+    def replace_during_validation(*args, **kwargs):
+        analysis.invalidate_generated()
+        return JMeterValidationReport(status="validated", executed=True)
+
+    monkeypatch.setattr(jmeter_runner, "run_plan", replace_during_validation)
+    response = client.post(f"/api/v1/analyses/{aid}/validate", json={})
+    assert response.status_code == 409
+    assert analysis.jmx_status is None
+    assert analysis.validation_report is None
+
+
 def test_manual_rule_validation_errors(client):
     r = client.post("/api/v1/analyses", files=_files(scenarios.scenario_login_token))
     aid = r.json()["analysis_id"]

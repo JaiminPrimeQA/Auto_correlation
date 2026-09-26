@@ -37,7 +37,7 @@ from ..domain.models import (
     ValueOccurrence,
 )
 from ..utils.masking import mask_value
-from ..utils.naming import dedupe_variable_name, suggest_variable_name
+from ..utils.naming import dedupe_variable_name, normalize_field_name, suggest_variable_name
 from .value_indexer import index_request_sinks, index_response_sources
 
 # Values that are never dynamic business correlations.
@@ -76,6 +76,24 @@ def _is_excluded(occ: ValueOccurrence, settings: Settings) -> str | None:
     if occ.data_type == DataType.NUMBER and len(v) <= 3:
         return "small enum-like integer"
     return None
+
+
+def _resource_id_path_match(src: ValueOccurrence, sink: ValueOccurrence, consumer: NormalizedExecution) -> bool:
+    """Permit small numeric IDs only when the path names the same resource.
+
+    `bookingid: 43` -> `/booking/43` is useful evidence. A count of 43 or
+    `/status/43` is not. Whole-value matching and ordering remain mandatory.
+    """
+    if sink.location_type != LocationType.PATH or not src.raw_value.isdecimal():
+        return False
+    if not src.raw_value.strip("0"):
+        return False
+    name = normalize_field_name(suggest_variable_name(src.key, src.canonical_path))
+    index = int(sink.canonical_path.strip("[]"))
+    if index <= 0 or index >= len(consumer.request.path_segments):
+        return False
+    resource = normalize_field_name(consumer.request.path_segments[index - 1])
+    return bool(resource) and name in {resource + "id", resource.removesuffix("s") + "id"}
 
 
 def _extractor_for(occ: ValueOccurrence) -> tuple[ExtractorMethod, str]:
@@ -146,6 +164,7 @@ class CorrelationEngine:
         base_sinks: list[ValueOccurrence] = [
             s for e in baseline.executions for s in index_request_sinks(e)
         ]
+        base_executions = {e.id: e for e in baseline.executions}
 
         raw_candidates: list[CorrelationCandidate] = []
         taken_names: set[str] = set()
@@ -156,7 +175,8 @@ class CorrelationEngine:
             producer_usable = _response_usable(exec_a)
             comp_exec_id = b2c.get(exec_a.id)
             for src_a in index_response_sources(exec_a):
-                if _is_excluded(src_a, self.settings):
+                exclusion = _is_excluded(src_a, self.settings)
+                if exclusion and exclusion not in ("value too short/common", "small enum-like integer"):
                     continue
                 # Condition 2: same location exists in aligned comparison producer.
                 src_b = comp_source_idx.get((comp_exec_id, src_a.location_type, src_a.canonical_path)) if comp_exec_id else None
@@ -177,6 +197,8 @@ class CorrelationEngine:
                         continue  # Condition 6: producer must precede consumer.
                     matched_a, wrapper = _match_consumer(value_a, sink_a)
                     if not matched_a:
+                        continue
+                    if exclusion and not _resource_id_path_match(src_a, sink_a, base_executions[sink_a.execution_id]):
                         continue
                     # Condition 5: aligned comparison sink holds value_b.
                     comp_sink_exec = b2c.get(_exec_id_of(sink_a))

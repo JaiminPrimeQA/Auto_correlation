@@ -93,6 +93,9 @@ def test_uploaded_analysis_is_private_to_its_owner(client):
     assert client.get(f"/api/v1/analyses/{analysis_id}", headers=_auth("alice")).status_code == 200
     assert client.get(f"/api/v1/analyses/{analysis_id}", headers=_auth("bob")).status_code == 404
     assert client.get(f"/api/v1/analyses/{analysis_id}/download/jmx", headers=_auth("bob")).status_code == 404
+    assert client.delete(f"/api/v1/analyses/{analysis_id}", headers=_auth("bob")).status_code == 404
+    assert client.get(f"/api/v1/analyses/{analysis_id}", headers=_auth("alice")).status_code == 200
+    assert client.delete(f"/api/v1/analyses/{analysis_id}", headers=_auth("alice")).status_code == 204
 
 
 def test_execution_job_and_its_analysis_belong_to_the_creator(client):

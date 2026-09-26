@@ -5,21 +5,21 @@ import { CaretRightIcon, CheckIcon, LockSimpleIcon } from "@phosphor-icons/react
 
 const COPY = {
   local: {
-    promise: "Your files stay private: processed in memory, never stored, and deleted after 30 minutes.",
+    promise: "Local processing uses memory and temporary files. Download the results you need before your session expires.",
     facts: [
-      "Files and typed values are held in memory only. There is no database.",
+      "Analysis state is held in server memory. Collection runs also write inputs, credentials and reports to a temporary workspace.",
       "Each run's temporary workspace is deleted as soon as the run ends.",
-      'Results expire after 30 minutes. "New analysis" deletes them immediately.',
-      "Secrets are hidden as you type, never logged, and never written into the JMX.",
+      'Results expire after the configured session lifetime (30 minutes by default). "New analysis" requests deletion of the current results.',
+      "Recognized credentials are masked and externalized from JMX by default. Enabling 'embed static secrets' includes captured credentials in the downloaded file. Review files before sharing.",
     ],
   },
   aws: {
-    promise: "Your files stay private: stored encrypted and deleted after 30 minutes.",
+    promise: "Hosted execution stores job files encrypted. Session expiry and physical file deletion follow different schedules.",
     facts: [
-      "Files and results are stored encrypted and only your account can read them.",
+      "Job files are encrypted in storage; API access requires the owning account. Analysis state currently lives in server memory.",
       "Each run happens in a fresh, isolated task that is discarded when it ends.",
-      'Results expire after 30 minutes. "New analysis" deletes them immediately.',
-      "Secrets are hidden as you type, never logged, and never written into the JMX.",
+      'Results expire after the configured session lifetime (30 minutes by default). Job files are cleaned up after processing; leftover objects have a one-day storage lifecycle rule, with asynchronous deletion.',
+      "Recognized credentials are masked and externalized from JMX by default. Enabling 'embed static secrets' includes captured credentials in the downloaded file. Review files before sharing.",
     ],
   },
 } as const;

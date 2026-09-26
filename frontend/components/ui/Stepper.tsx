@@ -19,10 +19,11 @@ export function Stepper({ steps, current }: { steps: string[]; current: number }
               >
                 {state === "done" ? <CheckIcon size={12} weight="bold" aria-hidden /> : i + 1}
               </span>
-              {label}
+              {/* On phones only the current step is labelled; the rest stay readable to screen readers. */}
+              <span className={state === "current" ? undefined : "sr-only sm:not-sr-only"}>{label}</span>
             </span>
             {i < steps.length - 1 && (
-              <span aria-hidden className="relative mx-3 h-0.5 min-w-6 flex-1 overflow-hidden rounded bg-line">
+              <span aria-hidden className="relative mx-2 h-0.5 sm:mx-3 min-w-6 flex-1 overflow-hidden rounded bg-line">
                 <span
                   className="absolute inset-0 origin-left bg-accent"
                   style={{

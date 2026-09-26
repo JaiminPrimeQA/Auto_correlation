@@ -16,6 +16,20 @@ export function CandidateTable({
   const [confidence, setConfidence] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function action(work: () => Promise<void>) {
+    setError(null);
+    setBusy(true);
+    try {
+      await work();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function load() {
     const filters: Record<string, string> = {};
@@ -24,25 +38,25 @@ export function CandidateTable({
     setCandidates(r.items);
   }
   useEffect(() => {
-    load();
+    void action(load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisId, confidence]);
 
   async function accept(c: Candidate) {
     await api.acceptCandidate(analysisId, c.id);
     setMsg(`Accepted ${c.variable_name}`);
-    onRulesChanged();
-    load();
+    await onRulesChanged();
+    await load();
   }
   async function reject(c: Candidate) {
     await api.rejectCandidate(analysisId, c.id);
-    load();
+    await load();
   }
   async function acceptHigh() {
     const r = await api.acceptHigh(analysisId);
     setMsg(`Accepted ${r.accepted} high-confidence rules`);
-    onRulesChanged();
-    load();
+    await onRulesChanged();
+    await load();
   }
 
   return (
@@ -59,11 +73,12 @@ export function CandidateTable({
           <option value="medium">medium</option>
           <option value="low">low</option>
         </select>
-        <button className="btn-ghost text-xs" onClick={acceptHigh}>
+        <button className="btn-ghost text-xs" disabled={busy} onClick={() => void action(acceptHigh)}>
           Accept all high
         </button>
       </div>
       {msg && <p className="mb-2 rounded-[10px] bg-ok-soft px-3 py-1.5 text-xs text-ok">{msg}</p>}
+      {error && <p role="alert" className="mb-2 rounded-[10px] bg-danger-soft px-3 py-1.5 text-xs text-danger">{error}</p>}
       {candidates.length === 0 && <p className="text-sm text-fg-subtle">No candidates.</p>}
       <div className="space-y-2">
         {candidates.map((c) => (
@@ -78,10 +93,10 @@ export function CandidateTable({
                 <button className="btn-ghost text-xs" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
                   {expanded === c.id ? "Hide" : "Evidence"}
                 </button>
-                <button className="btn-ghost text-xs" onClick={() => reject(c)}>
+                <button className="btn-ghost text-xs" disabled={busy} onClick={() => void action(() => reject(c))}>
                   Reject
                 </button>
-                <button className="btn text-xs" onClick={() => accept(c)}>
+                <button className="btn text-xs" disabled={busy} onClick={() => void action(() => accept(c))}>
                   Accept
                 </button>
               </span>

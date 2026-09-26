@@ -38,6 +38,11 @@ const GRAPH_PAIRS: [string, string][] = [
   ["graph-produce", "graph-node"],
 ];
 
+// The logo is a large graphic, so WCAG's 3:1 non-text contrast applies.
+const LOGO_PAIRS: [string, string][] = [
+  ["logo-ink", "surface"], ["logo-accent", "surface"], ["logo-needle", "surface"],
+];
+
 describe.each([[":root"], ['[data-theme="dark"]']])("tokens in %s", (selector) => {
   const vars = block(selector);
   it.each(PAIRS)("%s on %s meets WCAG AA", (fg, bg) => {
@@ -49,5 +54,9 @@ describe.each([[":root"], ['[data-theme="dark"]']])("tokens in %s", (selector) =
     expect(vars[fg], `--${fg}`).toBeDefined();
     expect(vars[bg], `--${bg}`).toBeDefined();
     expect(ratio(vars[fg], vars[bg])).toBeGreaterThanOrEqual(4.5);
+  });
+  it.each(LOGO_PAIRS)("%s on %s meets 3:1", (fg, bg) => {
+    expect(vars[fg], `--${fg}`).toBeDefined();
+    expect(ratio(vars[fg], vars[bg])).toBeGreaterThanOrEqual(3);
   });
 });

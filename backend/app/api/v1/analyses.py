@@ -8,7 +8,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 
 from ...core.config import Settings, get_settings
-from ...core.errors import not_found, validation_error
+from ...core.errors import conflict, not_found, validation_error
 from ...core.logging import get_logger
 from ...domain.enums import CandidateState, Confidence, JmxStatus, RuleOrigin, RuleState
 from ...domain.models import CorrelationRule
@@ -52,8 +52,10 @@ async def get_analysis(analysis: Analysis = Depends(require_analysis)) -> dict:
 
 
 @router.delete("/{analysis_id}", status_code=204)
-async def delete_analysis(analysis_id: str, store: SessionStore = Depends(get_store)) -> None:
-    if not store.delete(analysis_id):
+async def delete_analysis(
+    analysis: Analysis = Depends(require_analysis), store: SessionStore = Depends(get_store),
+) -> None:
+    if not store.delete(analysis.id):
         raise not_found("Analysis not found or expired.")
 
 
@@ -221,6 +223,7 @@ async def auto_correlate_endpoint(
 
     from ...services import auto_correlator, rule_validator
 
+    _require_healthy_automatic_correlation(analysis)
     if analysis.auto_correlation_status == "completed" and analysis.auto_correlation_result is not None:
         # Already correlated for this analysis - return the cached outcome so a
         # double-submit (or a client retry) can never duplicate rules.
@@ -309,6 +312,7 @@ async def accept_candidate(
 
 @router.post("/{analysis_id}/candidates/accept-high")
 async def accept_high(analysis: Analysis = Depends(require_analysis)) -> dict:
+    _require_healthy_automatic_correlation(analysis)
     accepted = []
     for c in analysis.candidates:
         if c.confidence == Confidence.HIGH and c.state == CandidateState.SUGGESTED:
@@ -383,17 +387,20 @@ async def validate(
     manifest = analysis.generated_manifest or {}
     correlation_variables = list(manifest.get("variables") or [])
     required_properties = list((manifest.get("secret_handling") or {}).get("required_properties") or [])
+    plan = analysis.generated_jmx
 
     # run_plan shells out to JMeter and blocks synchronously for the full run;
     # off-load it so a slow/remote validation can't freeze the event loop.
     report = await asyncio.to_thread(
         jmeter_runner.run_plan,
-        analysis.generated_jmx,
+        plan,
         correlation_variables=correlation_variables,
         required_properties=required_properties,
         property_values=body.properties,
         settings=settings,
     )
+    if analysis.generated_jmx != plan or analysis.generated_manifest is not manifest:
+        raise conflict("The plan changed during validation. Generate and validate the current plan again.")
     analysis.jmx_status = report.status
     analysis.validation_report = report.model_dump(mode="json")
     log.info(
@@ -418,6 +425,14 @@ async def get_validation(analysis: Analysis = Depends(require_analysis)) -> dict
 
 # --- internals ---
 
+
+def _require_healthy_automatic_correlation(analysis: Analysis) -> None:
+    if presenters._is_blocked(analysis):
+        raise validation_error(
+            "Run health blocks automatic correlation. Fix the errors shown in Run health "
+            "and capture two successful runs before trying again."
+        )
+
 def _source_key(rule):
     p = rule.producer
     return p.execution_id, p.location_type, p.canonical_path
@@ -427,6 +442,7 @@ def _consumer_key(consumer):
     return consumer.execution_id, consumer.location_type, consumer.canonical_path
 
 def _accept_candidate(analysis: Analysis, candidate_id: str) -> CorrelationRule | None:
+    _require_healthy_automatic_correlation(analysis)
     for c in analysis.candidates:
         if c.id != candidate_id:
             continue
@@ -513,6 +529,7 @@ def _generate(analysis: Analysis, body: GenerateRequest, *, persist: bool):
         warnings=warnings,
     )
     if persist and validation.ok:
+        analysis.validation_report = None
         analysis.generated_jmx = result.xml
         analysis.generated_manifest = manifest
         analysis.jmx_status = JmxStatus.GENERATED.value

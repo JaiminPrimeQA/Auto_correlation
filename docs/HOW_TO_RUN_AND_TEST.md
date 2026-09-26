@@ -3,6 +3,8 @@
 A short, practical guide for anyone who wants to start the app on their own machine and check
 that it works. No prior knowledge of the codebase is needed.
 
+For testers using an already running installation, read [TESTER_QUICK_START.md](TESTER_QUICK_START.md) or click **User guide** in the application header.
+
 ---
 
 ## 1. What the tool does (in one minute)
@@ -179,7 +181,7 @@ secret `api_key`).
 | Click **Run collection twice** several times quickly | Only **one** job starts. |
 | After Test D, search the downloaded JMX for `password123` | It does not appear. Secret body fields (password, client_secret, api_key) and secret headers become `${__P(name,)}` properties. |
 | Run a collection where every request fails (e.g. all 401), or send two such reports to `POST /api/v1/analyses` | Run health says *not ready*; the tool does not claim a successful correlation. |
-| Open **How we handle your data** under the upload and check the four facts | It expands to show: files and typed values are memory-only, each run's workspace is deleted when the run ends, results expire after 30 minutes and "New analysis" deletes them immediately, and secrets are hidden as typed, never logged and never written into the JMX. |
+| Open **How we handle your data** under the upload | It explains memory and temporary file use, configurable expiry, deletion behavior, and that credentials are externalized by default but may be embedded if explicitly selected. Hosted storage cleanup is asynchronous. |
 
 ---
 
@@ -226,6 +228,8 @@ runner, Docker images, Terraform checks and a JMeter smoke test.
 ---
 
 ## 8. Current limitations
+
+- Hosted JMeter validation is disabled until an isolated JMeter worker is implemented. Download the generated plan and validate locally. The local runner rejects missing required credentials, uses a temporary properties file, and redacts submitted values from validation diagnostics.
 
 - Production AWS deployment (Terraform, ECS/Fargate workers) is written and checked, but it
   has **never been applied** to a real AWS account.

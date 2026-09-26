@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.core.config import Settings
 from app.services import auto_correlator
 from app.services.normalizer import normalize_run
@@ -10,6 +12,28 @@ from tests.fixtures import builders as b
 
 def _run(execs):
     return normalize_run(b.report("Demo", execs), filename="d.json", settings=Settings())
+
+
+@pytest.mark.parametrize("identifier", [1, 43, 543])
+def test_short_resource_id_reused_in_path_is_correlated(identifier):
+    run = _run([
+        b.execution("Create", "POST", "https://api.test/booking", resp_body={"bookingid": identifier}, position=0),
+        b.execution("Get", "GET", f"https://api.test/booking/{identifier}", position=1),
+        b.execution("Delete", "DELETE", f"https://api.test/booking/{identifier}", position=2),
+    ])
+    rules = auto_correlator.auto_correlate(run, Settings())
+    assert len(rules) == 1
+    assert rules[0].variable_name == "bookingid"
+    assert len(rules[0].consumers) == 2
+
+
+@pytest.mark.parametrize("field,path", [("count", "booking"), ("bookingid", "status")])
+def test_short_number_is_not_matched_to_an_unrelated_resource(field, path):
+    run = _run([
+        b.execution("Create", "POST", "https://api.test/booking", resp_body={field: 43}, position=0),
+        b.execution("Use", "GET", f"https://api.test/{path}/43", position=1),
+    ])
+    assert auto_correlator.auto_correlate(run, Settings()) == []
 
 
 def test_correlates_every_reused_value_thread():

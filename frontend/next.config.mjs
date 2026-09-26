@@ -2,6 +2,7 @@
 const API_BASE = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 
 const nextConfig = {
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   async rewrites() {
     // Proxy API calls to the FastAPI backend during development.

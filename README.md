@@ -6,6 +6,7 @@ The app reconstructs the executed HTTP workflow, detects dynamic values passed f
 
 
 > **New here?** Start with [docs/HOW_TO_RUN_AND_TEST.md](docs/HOW_TO_RUN_AND_TEST.md) — setup, starting the app and step-by-step test scenarios.
+> **For testers:** [Tester quick start](docs/TESTER_QUICK_START.md), also available from **User guide** in the application header. See the [current audit](docs/acceptance/2026-09-26-functional-audit.md) for verified behavior and remaining deployment gaps.
 ---
 
 ## Why two successful runs?
