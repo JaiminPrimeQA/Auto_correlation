@@ -183,6 +183,29 @@ secret `api_key`).
 | Run a collection where every request fails (e.g. all 401), or send two such reports to `POST /api/v1/analyses` | Run health says *not ready*; the tool does not claim a successful correlation. |
 | Open **How we handle your data** under the upload | It explains memory and temporary file use, configurable expiry, deletion behavior, and that credentials are externalized by default but may be embedded if explicitly selected. Hosted storage cleanup is asynchronous. |
 
+### Test F: Free allowance, plans, emails and history
+
+Plans are configured in `backend/.env` (see `backend/.env.example`). Emails are sent through
+the SMTP server in `backend/.env`; with `B11_SMTP_HOST` empty they are only logged. Accounts,
+purchases and saved history are stored in `backend/data/` (delete that folder to start over).
+
+| Step | Expected result |
+|------|-----------------|
+| Open the app without signing in | The header shows **Free: 3 of 3 left**; the upload card says files up to 2 MB. |
+| Pick a collection larger than 2 MB and click **Inspect collection** | Nothing is uploaded. The plans dialog opens saying the free plan accepts files up to 2 MB. |
+| Run three analyses (Test D) | The header counts down to **Free: 0 of 3 left**. |
+| Try a fourth | The plans dialog opens: *You have used your free analyses*. Clearing cookies or registering a new account does not reset the count (it is kept per browser, per IP and per account). |
+| Click **Choose Monthly** | Checkout asks you to create an account or sign in, then returns to checkout. |
+| Register, then click **Pay $9.00** | *Payment successful*. A welcome email and a purchase receipt arrive (plan, dates, 50 MB limit, 7 days history, amount, reference). Checkout is a **demo**: no card is charged. |
+| Run and generate a plan (Tests D and B) | **Dashboard** lists the analysis with **Collection**, **JMX** and **Manifest** downloads and a *Kept until* date 7 days ahead (30 for 6 months, 90 for yearly). |
+| Upload a file between 2 MB and 50 MB | Accepted on Monthly; over 50 MB the dialog offers a larger plan. |
+| Buy another plan while one is active | It shows as *Starts later* and begins the day the current plan ends. |
+| **Sign in**, then **Forgot password?** | A reset link arrives; it works once and expires after 60 minutes. |
+
+Reminder and expiry emails are sent by a background task every 15 minutes: a reminder 3 days
+before a plan ends (skipped when a renewal is already queued) and a notice when it has ended.
+The same task deletes history past its retention period.
+
 ---
 
 ## 6. Automated tests
@@ -223,6 +246,8 @@ runner, Docker images, Terraform checks and a JMeter smoke test.
 | Port 3000 or 8000 already in use | Another copy is running. Close it, or use another port (`uvicorn ... --port 8010`, and `.\node_modules\.bin\next dev -p 3010` with `$env:BACKEND_URL="http://127.0.0.1:8010"`). |
 | `python` is not recognised | On Windows use `py` or the venv path `.\backend\.venv\Scripts\python.exe`. |
 | My earlier analysis disappeared | Analyses are kept in memory for 30 minutes and are lost when the backend restarts. Upload again. |
+| Emails do not arrive | Check the backend log for `email delivery failed`. For Gmail, `B11_SMTP_PASSWORD` must be a 16-character App Password (Google account, Security, App passwords), not the normal password. |
+| The free count is used up while testing | Delete `backend/data/` and restart the backend, or raise `B11_FREE_USES`. |
 | Collection that calls `localhost` / `127.0.0.1` fails | By design. The collection runs inside an isolated container and private addresses are blocked. Use a publicly reachable test API, or send Newman reports you recorded yourself to the API (Test A). |
 
 ---
@@ -239,6 +264,12 @@ runner, Docker images, Terraform checks and a JMeter smoke test.
 - HTML/text responses are correlated with lower confidence than JSON. Complex pages may need a
   manual rule in the **Add rule** tab.
 - Redirects are not followed when a collection runs locally.
+- Checkout is a demo: plans activate without taking a payment. A real payment provider
+  (Stripe, Razorpay) plugs into `backend/app/services/billing.py`; production refuses to start
+  with `B11_BILLING_PROVIDER=demo`.
+- Accounts use email and password and are stored in SQLite, which suits one backend
+  instance. Email addresses are not verified. The account system is built for the default
+  sign-in mode; with OIDC sign-in enabled, both would need to be merged into one login.
 
 For the full design and acceptance evidence see
 `docs/specs/2026-09-24-postman-collection-execution-design.md` and

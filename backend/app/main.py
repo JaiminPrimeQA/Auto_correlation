@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import re
+import secrets
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .api.deps import get_principal
-from .api.v1 import analyses, downloads, execution_jobs, rules
+from .api.deps import DEVICE_COOKIE, get_principal
+from .api.v1 import accounts, analyses, billing, downloads, execution_jobs, rules
 from .core.config import Settings, get_settings
 from .core.errors import (
     ProblemException,
@@ -44,10 +48,25 @@ def dependency_checks(settings: Settings) -> dict[str, bool]:
     return checks
 
 
+_DEVICE_ID = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         rid = new_request_id(request.headers.get("X-Request-ID"))
+        # An anonymous per-browser id, so the free allowance is counted per
+        # visitor rather than only per IP.
+        new_device = None
+        if not _DEVICE_ID.match(request.cookies.get(DEVICE_COOKIE, "")):
+            new_device = secrets.token_urlsafe(18)
+            request.state.device_id = new_device
         response = await call_next(request)
+        if new_device and request.url.path.startswith("/api/"):
+            settings = get_settings()
+            response.set_cookie(
+                DEVICE_COOKIE, new_device, max_age=2 * 365 * 86400, httponly=True, samesite="lax",
+                secure=settings.is_production or settings.cookie_secure, path="/",
+            )
         response.headers["X-Request-ID"] = rid
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -61,7 +80,21 @@ def create_app() -> FastAPI:
     configure_logging()
     check_production_settings(settings, role="api")
 
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        loop = None
+        if settings.maintenance_enabled:
+            from .api import deps
+            from .services.maintenance import MaintenanceLoop
+
+            loop = MaintenanceLoop(deps.get_account_store(), deps.get_mailer(), settings)
+            loop.start()
+        yield
+        if loop is not None:
+            loop.stop()
+
     app = FastAPI(
+        lifespan=lifespan,
         title=settings.app_name,
         version="0.1.0",
         description="Transform Newman JSON reports into auto-correlated JMeter test plans.",
@@ -88,6 +121,8 @@ def create_app() -> FastAPI:
     app.include_router(rules.router, prefix=settings.api_prefix, dependencies=authenticated)
     app.include_router(downloads.router, prefix=settings.api_prefix, dependencies=authenticated)
     app.include_router(execution_jobs.router, prefix=settings.api_prefix, dependencies=authenticated)
+    app.include_router(accounts.router, prefix=settings.api_prefix, dependencies=authenticated)
+    app.include_router(billing.router, prefix=settings.api_prefix, dependencies=authenticated)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:

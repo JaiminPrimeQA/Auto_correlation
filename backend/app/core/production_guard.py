@@ -49,6 +49,10 @@ def check_production_settings(settings: Settings, *, role: Literal["api", "worke
             problems.append("B11_OIDC_ISSUER must be an https URL.")
         if not settings.oidc_audience:
             problems.append("B11_OIDC_AUDIENCE is required.")
+        if settings.billing_provider == "demo":
+            problems.append("B11_BILLING_PROVIDER=demo activates plans without payment; configure a real provider.")
+        if settings.database_path == ":memory:":
+            problems.append("B11_DATABASE_PATH must be a file: accounts and plans would be lost on restart.")
         origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
         if not origins or any(o == "*" or not o.startswith("https://") for o in origins):
             problems.append("B11_CORS_ORIGINS must list explicit https origins (no wildcard) in production.")

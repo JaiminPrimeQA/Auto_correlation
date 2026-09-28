@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PrivacyNote } from "@/components/PrivacyNote";
 
 describe("PrivacyNote", () => {
-  it("states the promise and reveals the four facts on demand", () => {
+  it("states the promise and reveals the facts on demand", () => {
     render(<PrivacyNote mode="local" />);
     expect(screen.getByText(/local processing uses memory and temporary files/i)).toBeInTheDocument();
     const toggle = screen.getByRole("button", { name: /how we handle your data/i });
@@ -15,6 +15,7 @@ describe("PrivacyNote", () => {
       /temporary workspace is deleted as soon as the run ends/i,
       /results expire after the configured session lifetime/i,
       /embed static secrets/i,
+      /on a paid plan, each analysis's collection file, generated jmx and manifest are saved/i,
     ]) {
       expect(screen.getByText(fact)).toBeVisible();
     }

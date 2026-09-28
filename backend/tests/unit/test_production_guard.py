@@ -9,7 +9,8 @@ _AWS = dict(
 )
 _SAFE = dict(
     environment="production", auth_mode="oidc", oidc_issuer="https://idp.example.com/", oidc_audience="api",
-    cors_origins="https://b11.example.com", newman_runner="disabled", **_AWS,
+    cors_origins="https://b11.example.com", newman_runner="disabled", billing_provider="disabled",
+    database_path="data/baseline11.db", **_AWS,
 )
 
 
@@ -67,3 +68,15 @@ def test_worker_role_needs_the_ecs_runner_but_not_oidc():
     with pytest.raises(UnsafeConfiguration) as exc:
         check_production_settings(Settings(environment="production", newman_runner="docker", **_AWS), role="worker")
     assert "ecs" in str(exc.value)
+
+
+def test_demo_billing_is_refused_in_production():
+    with pytest.raises(UnsafeConfiguration) as exc:
+        check_production_settings(Settings(**{**_SAFE, "billing_provider": "demo"}))
+    assert any("B11_BILLING_PROVIDER" in p for p in exc.value.problems)
+
+
+def test_in_memory_account_database_is_refused_in_production():
+    with pytest.raises(UnsafeConfiguration) as exc:
+        check_production_settings(Settings(**{**_SAFE, "database_path": ":memory:"}))
+    assert any("B11_DATABASE_PATH" in p for p in exc.value.problems)

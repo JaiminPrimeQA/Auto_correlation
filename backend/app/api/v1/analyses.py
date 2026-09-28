@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
@@ -12,14 +14,24 @@ from ...core.errors import conflict, not_found, validation_error
 from ...core.logging import get_logger
 from ...domain.enums import CandidateState, Confidence, JmxStatus, RuleOrigin, RuleState
 from ...domain.models import CorrelationRule
+from ...repositories.account_store import AccountStore, User
 from ...repositories.analysis_store import Analysis, SessionStore
 from ...schemas import presenters
 from ...schemas.api import GenerateRequest, ValidateRequest
-from ...services import analysis_service, jmeter_runner
+from ...services import analysis_service, billing, jmeter_runner
+from ...services.billing import DAY, Entitlement
 from ...services.jmx_builder import BuildOptions, JmxBuilder
 from ...services.jmx_validator import validate_jmx
 from ...services.manifest_builder import build_manifest
-from ..deps import enforce_rate_limit, get_owner_key, get_store, require_analysis
+from ..deps import (
+    enforce_rate_limit,
+    get_account_store,
+    get_current_user,
+    get_entitlement,
+    get_owner_key,
+    get_store,
+    require_analysis,
+)
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 log = get_logger("analyses")
@@ -31,17 +43,32 @@ async def create_analysis(
     settings: Settings = Depends(get_settings),
     store: SessionStore = Depends(get_store),
     owner_key: str = Depends(get_owner_key),
+    ent: Entitlement = Depends(get_entitlement),
+    accounts: AccountStore = Depends(get_account_store),
     _: None = Depends(enforce_rate_limit),
 ) -> dict:
     if not files or len(files) > settings.max_files:
         raise validation_error(f"Upload one or two Newman reports (received {len(files)}).")
+    billing.ensure_can_start(ent)
+    for f in files:
+        if f.size is not None:
+            billing.ensure_file_fits(ent, filename=f.filename or "report.json", size=f.size)
+    settings = billing.request_settings(settings, ent)
     payloads: list[tuple[str, bytes]] = []
     for f in files:
         raw = await f.read()
         payloads.append((f.filename or "report.json", raw))
     analysis = analysis_service.build_analysis(payloads, settings)
     analysis.owner_key = owner_key
+    billing.consume_use(accounts, ent, now=time.time())
     store.create(analysis)
+    if ent.paid and ent.user is not None and ent.plan is not None:
+        run = analysis.sequence_run
+        entry = accounts.create_history(
+            user_id=ent.user.id, plan=ent.plan.id, collection_name=run.collection_name or run.filename,
+            now=time.time(), retention_seconds=ent.plan.retention_days * DAY, analysis_id=analysis.id,
+        )
+        accounts.update_history(entry.id, now=time.time(), request_count=len(run.executions))
     log.info("analysis created", extra={"stage": "create", "analysis_id": analysis.id, "count": len(payloads)})
     return presenters.analysis_summary(analysis)
 
@@ -352,6 +379,8 @@ async def preview(
 async def generate(
     body: GenerateRequest | None = None,
     analysis: Analysis = Depends(require_analysis),
+    user: User | None = Depends(get_current_user),
+    accounts: AccountStore = Depends(get_account_store),
 ) -> dict:
     manifest, xml, validation = _generate(analysis, body or GenerateRequest(), persist=True)
     if not validation.ok:
@@ -359,6 +388,8 @@ async def generate(
             "Generated JMX failed structural validation.",
             errors=[{"path": "jmx", "detail": e} for e in validation.errors],
         )
+    if user is not None:
+        _save_to_history(accounts, user, analysis)
     return {
         "status": JmxStatus.GENERATED.value,
         "note": (
@@ -380,6 +411,8 @@ async def validate(
     body: ValidateRequest | None = None,
     analysis: Analysis = Depends(require_analysis),
     settings: Settings = Depends(get_settings),
+    user: User | None = Depends(get_current_user),
+    accounts: AccountStore = Depends(get_account_store),
 ) -> dict:
     if not analysis.generated_jmx:
         raise validation_error("No JMX has been generated yet. Call generate first.")
@@ -403,6 +436,10 @@ async def validate(
         raise conflict("The plan changed during validation. Generate and validate the current plan again.")
     analysis.jmx_status = report.status
     analysis.validation_report = report.model_dump(mode="json")
+    if user is not None:
+        entry = accounts.history_for_analysis(user.id, analysis.id)
+        if entry is not None:
+            accounts.update_history(entry.id, now=time.time(), jmx_status=report.status)
     log.info(
         "jmx validated",
         extra={"stage": "validate", "analysis_id": analysis.id, "status": report.status},
@@ -424,6 +461,23 @@ async def get_validation(analysis: Analysis = Depends(require_analysis)) -> dict
 
 
 # --- internals ---
+
+
+def _save_to_history(accounts: AccountStore, user: User, analysis: Analysis) -> None:
+    """Keep the latest generated plan with the analysis's history entry (paid
+    plans only: an entry exists only when the analysis started on a plan)."""
+    entry = accounts.history_for_analysis(user.id, analysis.id)
+    if entry is None or not analysis.generated_jmx:
+        return
+    now = time.time()
+    accounts.save_history_file(entry.id, "jmx", analysis.generated_jmx.encode("utf-8"), now=now)
+    manifest = analysis.generated_manifest or {}
+    accounts.save_history_file(
+        entry.id, "manifest", json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8"), now=now,
+    )
+    accounts.update_history(
+        entry.id, now=now, jmx_status=analysis.jmx_status, correlation_count=len(manifest.get("variables") or []),
+    )
 
 
 def _require_healthy_automatic_correlation(analysis: Analysis) -> None:

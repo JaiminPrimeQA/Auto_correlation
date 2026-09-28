@@ -151,6 +151,63 @@ class Settings(BaseSettings):
     # this bound (default 0: every sampler must succeed). Raise for flaky nets.
     jmeter_max_error_ratio: float = 0.0
 
+    # --- Accounts, plans and billing ---
+    # SQLite file holding accounts, subscriptions, free-use counters and the
+    # analysis history of paid users (":memory:" for tests). Single instance only.
+    database_path: str = "data/baseline11.db"
+    # Saved history files (collection, JMX, manifest), one folder per entry.
+    history_dir: str = "data/history"
+    # Anonymous visitors and accounts without a plan.
+    free_uses: int = 3
+    free_max_file_mb: int = 2
+    # Count free uses per client IP as well as per browser, so clearing
+    # cookies does not reset the allowance. Visitors behind one shared IP
+    # share the allowance.
+    free_tier_count_by_ip: bool = True
+    # Proxies in front of the API that append to X-Forwarded-For (the Next.js
+    # dev proxy is one). 0 uses the TCP peer address.
+    trusted_proxy_hops: int = 1
+    plan_currency: str = "USD"
+    plan_monthly_price_cents: int = 900
+    plan_semiannual_price_cents: int = 4500
+    plan_yearly_price_cents: int = 7900
+    plan_monthly_max_file_mb: int = 50
+    plan_semiannual_max_file_mb: int = 100
+    plan_yearly_max_file_mb: int = 200
+    plan_monthly_retention_days: int = 7
+    plan_semiannual_retention_days: int = 30
+    plan_yearly_retention_days: int = 90
+    # `demo` activates a plan without taking a payment (never in production);
+    # `disabled` turns purchases off.
+    billing_provider: Literal["demo", "disabled"] = "demo"
+    account_session_days: int = 30
+    password_reset_minutes: int = 60
+    # Where the web app is served; used for links in emails.
+    app_base_url: str = "http://localhost:3000"
+    # Session cookies are Secure in production; set true to force it elsewhere.
+    cookie_secure: bool = False
+    # Sign-in attempts per client IP per window.
+    login_attempts: int = 10
+    login_window_seconds: int = 300
+
+    # --- Email (SMTP) ---
+    # With no host, emails are only logged (development).
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    # `starttls` (port 587), `ssl` (port 465) or `none`.
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    smtp_timeout_seconds: int = 20
+    mail_from_address: str | None = None
+    mail_from_name: str = "Baseline Auto Correlation"
+    # Days before a plan ends that the reminder email is sent.
+    expiry_reminder_days: int = 3
+
+    # --- Background maintenance (reminders, expiry notices, history purge) ---
+    maintenance_enabled: bool = True
+    maintenance_interval_seconds: int = 900
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() == "production"

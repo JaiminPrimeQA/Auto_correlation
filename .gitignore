@@ -56,3 +56,6 @@ frontend/test-results/
 frontend/playwright-report/
 .superpowers/
 .worktrees/
+
+# Accounts database and saved history
+backend/data/

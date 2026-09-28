@@ -3,6 +3,8 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { AuthGate } from "@/components/AuthGate";
+import { AccountProvider } from "@/components/account/AccountProvider";
+import { PlanLimitDialog } from "@/components/account/PlanLimitDialog";
 import { NO_FLASH_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
@@ -17,7 +19,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_SCRIPT }} />
       </head>
       <body className="min-h-[100dvh] antialiased">
-        <AuthGate>{children}</AuthGate>
+        <AccountProvider>
+          <AuthGate>{children}</AuthGate>
+          <PlanLimitDialog />
+        </AccountProvider>
         <footer className="mx-auto max-w-6xl px-4 pb-8 pt-4 text-xs text-fg-subtle sm:px-6">
           <a className="hover:text-fg" href="https://jmeter.apache.org/usermanual/component_reference.html" target="_blank" rel="noreferrer">
             JMeter 5.6.3 reference

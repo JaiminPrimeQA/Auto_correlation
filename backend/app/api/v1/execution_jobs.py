@@ -9,6 +9,7 @@ polling, and cancellation/cleanup.
 from __future__ import annotations
 
 import json
+import time
 
 from fastapi import APIRouter, Depends, File, Form, Header, UploadFile
 from starlette.concurrency import run_in_threadpool
@@ -18,16 +19,21 @@ from ...core.config import Settings, get_settings
 from ...core.errors import service_unavailable, validation_error
 from ...core.logging import get_logger
 from ...domain.execution_job import ExecutionJob, ExecutionJobState
+from ...repositories.account_store import AccountStore, User
 from ...repositories.analysis_store import SessionStore
 from ...repositories.execution_job_store import ExecutionJobStore
 from ...repositories.s3_object_store import job_prefix
 from ...schemas import presenters
-from ...services import execution_job_service
+from ...services import billing, execution_job_service
+from ...services.billing import DAY, Entitlement
 from ...services.job_finalizer import finalize_job, needs_finalizing
 from ...services.job_launcher import JobLauncher, RunMaterial
 from ...services.postman_inspector import inspect_collection
 from ..deps import (
     enforce_rate_limit,
+    get_account_store,
+    get_current_user,
+    get_entitlement,
     get_job_launcher,
     get_job_store,
     get_object_store,
@@ -45,8 +51,14 @@ async def inspect(
     collection: UploadFile = File(...),
     environment: UploadFile | None = File(None),
     settings: Settings = Depends(get_settings),
+    ent: Entitlement = Depends(get_entitlement),
     _: None = Depends(enforce_rate_limit),
 ) -> dict:
+    # Checked before any work, so a visitor with no free uses left, or a file
+    # over the plan limit, learns it on the first step.
+    billing.ensure_can_start(ent)
+    _ensure_uploads_fit(ent, collection, environment)
+    settings = billing.request_settings(settings, ent)
     collection_raw = await collection.read()
     environment_raw = await environment.read() if environment is not None else None
     environment_filename = environment.filename if environment is not None else None
@@ -70,6 +82,12 @@ async def inspect(
         },
     )
     return presenters.postman_inspection_dto(inspection)
+
+
+def _ensure_uploads_fit(ent: Entitlement, *uploads: UploadFile | None) -> None:
+    for upload in uploads:
+        if upload is not None and upload.size is not None:
+            billing.ensure_file_fits(ent, filename=upload.filename or "file", size=upload.size)
 
 
 def _reject_non_finite(literal: str) -> float:
@@ -119,6 +137,8 @@ async def create_execution_job(
     owner_key: str = Depends(get_owner_key),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     launcher: JobLauncher | None = Depends(get_job_launcher),
+    ent: Entitlement = Depends(get_entitlement),
+    accounts: AccountStore = Depends(get_account_store),
     _: None = Depends(enforce_rate_limit),
 ) -> dict:
     # Spec §4: with no runner configured (the default) nothing may execute, so
@@ -135,6 +155,9 @@ async def create_execution_job(
     if not isinstance(supplied_values, dict):
         raise validation_error("'supplied_values_json' must be a JSON object.")
     supplied_values = _coerce_supplied_values(supplied_values)
+    billing.ensure_can_start(ent)
+    _ensure_uploads_fit(ent, collection, environment)
+    settings = billing.request_settings(settings, ent)
 
     collection_raw = await collection.read()
     environment_raw = await environment.read() if environment is not None else None
@@ -175,6 +198,19 @@ async def create_execution_job(
     # job (possibly already past QUEUED, or even terminal) - launching then
     # would start a second run of the same job.
     if created:
+        # One free use per started job; an idempotent repeat is not a new use.
+        try:
+            billing.consume_use(accounts, ent, now=time.time())
+        except Exception:
+            job_store.delete(job.id)
+            raise
+        if ent.paid and ent.user is not None and ent.plan is not None:
+            await run_in_threadpool(
+                accounts.create_history,
+                user_id=ent.user.id, plan=ent.plan.id, collection_name=job.collection_name, now=time.time(),
+                retention_seconds=ent.plan.retention_days * DAY, job_id=job.id,
+                collection_filename=collection_filename, collection_raw=collection_raw,
+            )
         material = RunMaterial(
             collection_data=collection_data,
             environment_data=environment_data,
@@ -198,6 +234,8 @@ async def get_execution_job(
     settings: Settings = Depends(get_settings),
     job_store: ExecutionJobStore = Depends(get_job_store),
     analysis_store: SessionStore = Depends(get_store),
+    user: User | None = Depends(get_current_user),
+    accounts: AccountStore = Depends(get_account_store),
 ) -> dict:
     # AWS backend: the worker left both reports in S3; the owner's first poll
     # builds the analysis here, where analyses live.
@@ -207,7 +245,22 @@ async def get_execution_job(
             analysis_store=analysis_store, settings=settings,
         )
         job = job_store.get(job.id) or job
+    if user is not None and job.analysis_id:
+        _link_history(accounts, user, job.id, job.analysis_id, analysis_store)
     return presenters.execution_job_dto(job)
+
+
+def _link_history(accounts: AccountStore, user: User, job_id: str, analysis_id: str, analyses: SessionStore) -> None:
+    """Record, once, which analysis a saved job produced, so the plan
+    generated from it is saved with the same history entry."""
+    entry = accounts.history_for_job(user.id, job_id)
+    if entry is None or entry.analysis_id:
+        return
+    analysis = analyses.get(analysis_id)
+    accounts.update_history(
+        entry.id, now=time.time(), analysis_id=analysis_id,
+        request_count=len(analysis.baseline_run.executions) if analysis else None,
+    )
 
 
 @router.delete("/{job_id}", status_code=204)

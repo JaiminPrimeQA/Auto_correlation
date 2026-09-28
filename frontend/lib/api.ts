@@ -317,11 +317,31 @@ function problemError(res: Response, data: unknown): ApiError {
   return new ApiError(sub ? `${detail}: ${sub}` : detail, res.status, err.code ?? null);
 }
 
-async function send<T>(path: string, init?: RequestInit): Promise<T> {
+/** Problem codes that mean "your plan does not allow this": the app shows
+ * the plans (see components/account/PlanLimitDialog.tsx). */
+export const PLAN_LIMIT_CODES = ["usage_limit_reached", "plan_file_limit"] as const;
+export const PLAN_LIMIT_EVENT = "b11:plan-limit";
+
+export interface PlanLimitDetail {
+  code: (typeof PLAN_LIMIT_CODES)[number];
+  message: string;
+}
+
+export function announcePlanLimit(detail: PlanLimitDetail): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PLAN_LIMIT_EVENT, { detail }));
+}
+
+export async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await authorizedFetch(path, init);
   if (res.status === 204) return undefined as T;
   const data = parseBody(await res.text());
-  if (!res.ok) throw problemError(res, data);
+  if (!res.ok) {
+    const error = problemError(res, data);
+    if (PLAN_LIMIT_CODES.includes(error.code as PlanLimitDetail["code"])) {
+      announcePlanLimit({ code: error.code as PlanLimitDetail["code"], message: error.message });
+    }
+    throw error;
+  }
   return data as T;
 }
 
@@ -330,7 +350,7 @@ function filenameFrom(disposition: string | null, fallback: string): string {
   return match ? match[1] : fallback;
 }
 
-function request<T>(path: string, init?: RequestInit): Promise<T> {
+export function request<T>(path: string, init?: RequestInit): Promise<T> {
   return send<T>(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },

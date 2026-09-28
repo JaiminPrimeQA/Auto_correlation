@@ -18,17 +18,24 @@ def _request(host: str | None):
 
 
 def test_get_owner_key_uses_client_host():
-    assert get_owner_key(_request("10.0.0.5"), None) == "10.0.0.5"
+    assert get_owner_key(_request("10.0.0.5"), None, None) == "10.0.0.5"
 
 
 def test_get_owner_key_falls_back_when_no_client():
-    assert get_owner_key(_request(None), None) == "unknown"
+    assert get_owner_key(_request(None), None, None) == "unknown"
 
 
 def test_get_owner_key_prefers_the_authenticated_subject():
     from app.core.auth import Principal
 
-    assert get_owner_key(_request("10.0.0.5"), Principal(subject="abc")) == "user:abc"
+    assert get_owner_key(_request("10.0.0.5"), Principal(subject="abc"), None) == "user:abc"
+
+
+def test_get_owner_key_uses_the_signed_in_account():
+    from app.repositories.account_store import User
+
+    user = User(id="u1", email="a@example.com", name="A", password_hash="x", created_at=0.0)
+    assert get_owner_key(_request("10.0.0.5"), None, user) == "acct:u1"
 
 
 def test_require_owned_job_returns_job_for_matching_owner():

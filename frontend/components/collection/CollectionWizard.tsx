@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { api, type AnalysisSummary, type CollectionInspection } from "@/lib/api";
 import { suppliedValuesFor, variablesToAsk } from "@/lib/executionJob";
 import { Stepper } from "@/components/ui/Stepper";
+import { useAccount } from "@/components/account/AccountProvider";
 import { fadeVariants, stepVariants } from "@/lib/motion";
 import { ExecutionProgress } from "./ExecutionProgress";
 import { FilesStep, type CollectionFiles } from "./FilesStep";
@@ -42,6 +43,7 @@ export function CollectionWizard({
   const [attemptKey, setAttemptKey] = useState<string>(newAttemptKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const { refresh: refreshAccount } = useAccount();
 
   const askedNames = inspection ? variablesToAsk(inspection).map((v) => v.name) : [];
 
@@ -73,6 +75,7 @@ export function CollectionWizard({
         idempotencyKey: attemptKey,
       });
       clearSecrets();
+      void refreshAccount(); // one free use was taken
       setJobId(job.job_id);
       onJobCreated?.(job.job_id);
       setStep("progress");

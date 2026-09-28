@@ -9,9 +9,9 @@ const nextConfig = {
     return [{ source: "/api/:path*", destination: `${API_BASE}/api/:path*` }];
   },
   experimental: {
-    // Default is 10mb; the app advertises a 25 MiB per-file upload limit,
-    // so a two-file multipart body can exceed the proxy's default cap.
-    middlewareClientMaxBodySize: "60mb",
+    // Default is 10mb. The largest plan accepts a 200 MB collection plus a
+    // 200 MB environment in one multipart body; the API enforces each plan's limit.
+    middlewareClientMaxBodySize: "450mb",
   },
 };
 

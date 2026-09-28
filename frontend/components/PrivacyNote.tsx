@@ -11,6 +11,7 @@ const COPY = {
       "Each run's temporary workspace is deleted as soon as the run ends.",
       'Results expire after the configured session lifetime (30 minutes by default). "New analysis" requests deletion of the current results.',
       "Recognized credentials are masked and externalized from JMX by default. Enabling 'embed static secrets' includes captured credentials in the downloaded file. Review files before sharing.",
+      "On a paid plan, each analysis's collection file, generated JMX and manifest are saved to your account and deleted automatically when the plan's history period ends (7, 30 or 90 days). Environment files and values you type in are never saved.",
     ],
   },
   aws: {
@@ -20,6 +21,7 @@ const COPY = {
       "Each run happens in a fresh, isolated task that is discarded when it ends.",
       'Results expire after the configured session lifetime (30 minutes by default). Job files are cleaned up after processing; leftover objects have a one-day storage lifecycle rule, with asynchronous deletion.',
       "Recognized credentials are masked and externalized from JMX by default. Enabling 'embed static secrets' includes captured credentials in the downloaded file. Review files before sharing.",
+      "On a paid plan, each analysis's collection file, generated JMX and manifest are saved to your account and deleted automatically when the plan's history period ends (7, 30 or 90 days). Environment files and values you type in are never saved.",
     ],
   },
 } as const;

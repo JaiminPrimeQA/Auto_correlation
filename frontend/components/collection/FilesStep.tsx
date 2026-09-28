@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { FileArrowUpIcon } from "@phosphor-icons/react";
-import { api, type CollectionInspection } from "@/lib/api";
+import { announcePlanLimit, api, type CollectionInspection } from "@/lib/api";
+import { formatBytes, type Me } from "@/lib/account";
 import { PrivacyNote } from "@/components/PrivacyNote";
+import { useAccount } from "@/components/account/AccountProvider";
 import { SampleWalkthrough } from "./SampleWalkthrough";
 
 export interface CollectionFiles {
@@ -67,6 +70,39 @@ const HOW = [
 ] as const;
 
 /** Step 1: choose files and inspect them - nothing is executed here. */
+/** What the visitor's plan allows, under the upload areas. */
+function PlanAllowance({ me }: { me: Me }) {
+  if (me.plan) {
+    return (
+      <p className="text-[12.5px] text-fg-muted">
+        <span className="font-medium text-fg">{me.plan.plan_name} plan:</span> unlimited analyses, files up to{" "}
+        {me.limits.max_file_mb} MB, saved to your{" "}
+        <Link href="/dashboard" className="text-accent-soft-ink underline">history</Link> for{" "}
+        {me.limits.history_retention_days} days.
+      </p>
+    );
+  }
+  const left = me.limits.uses_remaining ?? 0;
+  return (
+    <p className={`text-[12.5px] ${left === 0 ? "text-danger" : "text-fg-muted"}`}>
+      <span className="font-medium text-fg">Free plan:</span> {left} of {me.limits.uses_limit} analyses left, files up
+      to {me.limits.max_file_mb} MB.{" "}
+      <Link href="/pricing" className="text-accent-soft-ink underline">
+        {left === 0 ? "Choose a plan to continue" : "Need more?"}
+      </Link>
+    </p>
+  );
+}
+
+/** A message when a file is over the plan limit, before anything is uploaded. */
+function tooLarge(files: (File | null)[], me: Me | null): string | null {
+  if (!me) return null;
+  const big = files.find((f) => f && f.size > me.limits.max_file_bytes);
+  if (!big) return null;
+  const where = me.plan ? `The ${me.plan.plan_name} plan` : "The free plan";
+  return `'${big.name}' is ${formatBytes(big.size)}. ${where} accepts files up to ${me.limits.max_file_mb} MB.`;
+}
+
 export function FilesStep({
   initial,
   onInspected,
@@ -78,9 +114,16 @@ export function FilesStep({
   const [environment, setEnvironment] = useState<File | null>(initial?.environment ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { me } = useAccount();
 
   async function inspect() {
     if (!collection || busy) return;
+    const oversize = tooLarge([collection, environment], me);
+    if (oversize) {
+      setError(oversize);
+      announcePlanLimit({ code: "plan_file_limit", message: oversize });
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -117,12 +160,13 @@ export function FilesStep({
       <div className="card rise space-y-3 p-5">
         <div style={{ "--i": 1 } as React.CSSProperties}>
           <DropZone id="collection-file" label="Collection file" emptyTitle="Choose or drop a collection"
-            emptyHint="Postman v2.0 or v2.1 JSON, up to 10 MiB" file={collection} onPick={setCollection} />
+            emptyHint={`Postman v2.0 or v2.1 JSON, up to ${me?.limits.max_file_mb ?? 2} MB`} file={collection} onPick={setCollection} />
         </div>
         <div style={{ "--i": 2 } as React.CSSProperties}>
           <DropZone id="environment-file" label="Environment file" optional emptyTitle="Choose or drop an environment"
-            emptyHint="Values such as baseUrl and password, up to 2 MiB" file={environment} onPick={setEnvironment} />
+            emptyHint={`Values such as baseUrl and password, up to ${me?.limits.max_file_mb ?? 2} MB`} file={environment} onPick={setEnvironment} />
         </div>
+        {me && <PlanAllowance me={me} />}
         <div style={{ "--i": 3 } as React.CSSProperties}>
           <PrivacyNote />
         </div>

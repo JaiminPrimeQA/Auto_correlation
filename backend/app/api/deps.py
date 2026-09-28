@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import time
 from functools import lru_cache
 
 from fastapi import Depends, Request
@@ -12,12 +13,18 @@ from ..core.config import Settings, get_settings
 from ..core.errors import ProblemException, not_found, rate_limited, unauthorized
 from ..core.security import RateLimiter
 from ..domain.execution_job import ExecutionJob, NewmanRunner
+from ..repositories.account_store import AccountStore, User
 from ..repositories.analysis_store import Analysis, InMemorySessionStore, SessionStore
 from ..repositories.execution_job_store import ExecutionJobStore, InMemoryExecutionJobStore
+from ..services.billing import Entitlement, resolve_entitlement
 from ..services.docker_newman_runner import DockerNewmanRunner
 from ..services.fake_newman_runner import canned_fake_runner
 from ..services.job_dispatcher import JobDispatcher, ThreadPoolJobDispatcher
 from ..services.job_launcher import JobLauncher, LocalJobLauncher, QueueJobLauncher
+from ..services.mailer import Mailer, build_mailer
+
+SESSION_COOKIE = "b11_session"
+DEVICE_COOKIE = "b11_device"
 
 
 @lru_cache
@@ -74,11 +81,66 @@ def get_principal(
         raise _unauthorized(str(exc)) from exc
 
 
-def get_owner_key(request: Request, principal: Principal | None = Depends(get_principal)) -> str:
-    """Who owns what this request creates: the OIDC subject, or the client IP
-    when authentication is disabled (local development)."""
+@lru_cache
+def get_account_store() -> AccountStore:
+    settings = get_settings()
+    return AccountStore(settings.database_path, settings.history_dir)
+
+
+@lru_cache
+def get_mailer() -> Mailer:
+    return build_mailer(get_settings())
+
+
+def client_ip(request: Request, settings: Settings) -> str:
+    """The caller's IP: the entry the nearest trusted proxy appended to
+    X-Forwarded-For (entries further left are client-controlled), else the
+    TCP peer."""
+    hops = settings.trusted_proxy_hops
+    forwarded = [p.strip() for p in request.headers.get("X-Forwarded-For", "").split(",") if p.strip()]
+    if hops > 0 and len(forwarded) >= hops:
+        return forwarded[-hops]
+    return request.client.host if request.client else "unknown"
+
+
+def get_device_id(request: Request) -> str | None:
+    """The browser's anonymous id, set by the device-cookie middleware."""
+    return getattr(request.state, "device_id", None) or request.cookies.get(DEVICE_COOKIE)
+
+
+def get_current_user(
+    request: Request, store: AccountStore = Depends(get_account_store),
+) -> User | None:
+    """The signed-in account (session cookie), or None."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    return store.session_user(token, now=time.time())
+
+
+def get_entitlement(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    store: AccountStore = Depends(get_account_store),
+    user: User | None = Depends(get_current_user),
+) -> Entitlement:
+    return resolve_entitlement(
+        store, settings, user=user, device_id=get_device_id(request),
+        client_ip=client_ip(request, settings), now=time.time(),
+    )
+
+
+def get_owner_key(
+    request: Request,
+    principal: Principal | None = Depends(get_principal),
+    user: User | None = Depends(get_current_user),
+) -> str:
+    """Who owns what this request creates: the OIDC subject, the signed-in
+    account, or the client IP when neither applies (local development)."""
     if principal is not None:
         return f"user:{principal.subject}"
+    if user is not None:
+        return f"acct:{user.id}"
     return request.client.host if request.client else "unknown"
 
 
