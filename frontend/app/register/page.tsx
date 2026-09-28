@@ -40,7 +40,7 @@ function RegisterForm() {
   return (
     <AuthCard
       title="Create your account"
-      subtitle="An account is needed to buy a plan. Your plan, receipts and saved analyses live here."
+      subtitle="Free to create: it includes 3 analyses with files up to 2 MB. Your plan, receipts and saved analyses live here too."
       footer={<>Already registered? <Link href={`/login${query}`} className="font-medium text-accent-soft-ink underline">Sign in</Link></>}
     >
       <form className="space-y-4" onSubmit={submit}>

@@ -21,6 +21,9 @@ import tempfile  # noqa: E402
 os.environ.setdefault("B11_DATABASE_PATH", ":memory:")
 os.environ.setdefault("B11_HISTORY_DIR", tempfile.mkdtemp(prefix="b11-history-"))
 os.environ.setdefault("B11_MAINTENANCE_ENABLED", "false")
+# The analysis tests predate accounts and run signed out; the plan tests turn
+# the sign-in requirement back on (tests/integration/test_plans_billing.py).
+os.environ.setdefault("B11_REQUIRE_ACCOUNT", "false")
 # Never send real email from tests, whatever a local .env configures.
 for _name in ("B11_SMTP_HOST", "B11_SMTP_USERNAME", "B11_SMTP_PASSWORD", "B11_MAIL_FROM_ADDRESS"):
     os.environ[_name] = ""

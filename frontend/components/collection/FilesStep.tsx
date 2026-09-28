@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { FileArrowUpIcon } from "@phosphor-icons/react";
-import { announcePlanLimit, api, type CollectionInspection } from "@/lib/api";
+import { announcePlanLimit, api, ApiError, type CollectionInspection } from "@/lib/api";
 import { formatBytes, type Me } from "@/lib/account";
 import { PrivacyNote } from "@/components/PrivacyNote";
 import { useAccount } from "@/components/account/AccountProvider";
@@ -94,6 +94,30 @@ function PlanAllowance({ me }: { me: Me }) {
   );
 }
 
+/** Shown in place of the upload areas until the visitor signs in, so every
+ * analysis - free or paid - is counted against an account. */
+function SignInPrompt({ me }: { me: Me }) {
+  const next = encodeURIComponent("/");
+  return (
+    <div className="card rise space-y-4 p-6">
+      <div style={{ "--i": 1 } as React.CSSProperties}>
+        <h2 className="text-lg font-semibold">Create a free account to start</h2>
+        <p className="mt-1 text-sm leading-relaxed text-fg-muted">
+          The free plan includes {me.limits.uses_limit} analyses with files up to {me.limits.max_file_mb} MB. Your
+          account keeps count of what you have used, and a paid plan raises the limits and saves your history.
+        </p>
+      </div>
+      <div style={{ "--i": 2 } as React.CSSProperties} className="flex flex-wrap gap-3">
+        <Link href={`/register?next=${next}`} className="btn">Create free account</Link>
+        <Link href={`/login?next=${next}`} className="btn-ghost">Sign in</Link>
+      </div>
+      <p style={{ "--i": 3 } as React.CSSProperties} className="text-[12.5px] text-fg-subtle">
+        <Link href="/pricing" className="text-accent-soft-ink underline">Compare plans</Link>
+      </p>
+    </div>
+  );
+}
+
 /** A message when a file is over the plan limit, before anything is uploaded. */
 function tooLarge(files: (File | null)[], me: Me | null): string | null {
   if (!me) return null;
@@ -114,7 +138,7 @@ export function FilesStep({
   const [environment, setEnvironment] = useState<File | null>(initial?.environment ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { me } = useAccount();
+  const { me, refresh } = useAccount();
 
   async function inspect() {
     if (!collection || busy) return;
@@ -130,7 +154,9 @@ export function FilesStep({
       const inspection = await api.inspectCollection(collection, environment);
       onInspected({ collection, environment }, inspection);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // Signed out in another tab: show the sign-in card instead of an error.
+      if (e instanceof ApiError && e.code === "sign_in_required") void refresh();
+      else setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -157,6 +183,7 @@ export function FilesStep({
         </ol>
       </div>
 
+      {me?.sign_in_required ? <SignInPrompt me={me} /> : (
       <div className="card rise space-y-3 p-5">
         <div style={{ "--i": 1 } as React.CSSProperties}>
           <DropZone id="collection-file" label="Collection file" emptyTitle="Choose or drop a collection"
@@ -180,6 +207,7 @@ export function FilesStep({
           </button>
         </div>
       </div>
+      )}
     </div>
     <SampleWalkthrough />
     </>

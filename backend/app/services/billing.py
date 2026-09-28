@@ -1,9 +1,10 @@
 """Plans in use: what a caller may do (entitlement), purchases, and the
 analysis history kept for paid plans.
 
-Free allowance: ``free_uses`` analyses with files up to ``free_max_file_mb``,
-counted per browser, per client IP (optional) and per account, so neither
-clearing cookies nor registering a new account resets it. A paid plan lifts
+Every analysis needs a signed-in account (``require_account``). Free
+allowance: ``free_uses`` analyses with files up to ``free_max_file_mb``,
+counted per account, per browser and per client IP (optional), so registering
+a second account in the same browser does not reset it. A paid plan lifts
 the use limit, raises the file limit and keeps a history.
 """
 
@@ -31,6 +32,7 @@ class Entitlement:
     free_limit: int
     free_used: int
     usage_keys: tuple[str, ...]
+    sign_in_required: bool = False
 
     @property
     def paid(self) -> bool:
@@ -68,6 +70,7 @@ def resolve_entitlement(
         free_limit=settings.free_uses,
         free_used=store.free_uses_used(list(keys)),
         usage_keys=keys,
+        sign_in_required=user is None and settings.require_account and settings.auth_mode != "oidc",
     )
 
 
@@ -83,7 +86,17 @@ def usage_limit_reached(ent: Entitlement) -> ProblemException:
     )
 
 
+def sign_in_required(ent: Entitlement) -> ProblemException:
+    return ProblemException(
+        status=401, code="sign_in_required", title="Sign in required",
+        detail=(f"Create a free account or sign in to start. The free plan includes {ent.free_limit} analyses "
+                f"with files up to {_mb(ent.max_file_bytes)}."),
+    )
+
+
 def ensure_can_start(ent: Entitlement) -> None:
+    if ent.sign_in_required:
+        raise sign_in_required(ent)
     if not ent.paid and ent.free_used >= ent.free_limit:
         raise usage_limit_reached(ent)
 
@@ -205,6 +218,7 @@ def user_dto(user: User) -> dict:
 def entitlement_dto(ent: Entitlement, store: AccountStore, settings: Settings, *, now: float) -> dict:
     return {
         "user": user_dto(ent.user) if ent.user else None,
+        "sign_in_required": ent.sign_in_required,
         "plan": subscription_dto(ent.subscription, settings, now=now) if ent.subscription else None,
         "upcoming": [
             subscription_dto(s, settings, now=now) for s in store.upcoming_subscriptions(ent.user.id, now=now)

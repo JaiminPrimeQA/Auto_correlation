@@ -47,6 +47,8 @@ export interface Subscription {
 
 export interface Me {
   user: AccountUser | null;
+  /** True when the visitor must create an account or sign in before an analysis. */
+  sign_in_required: boolean;
   plan: Subscription | null;
   upcoming: Subscription[];
   limits: {

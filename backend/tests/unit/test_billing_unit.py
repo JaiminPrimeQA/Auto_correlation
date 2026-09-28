@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.core.config import Settings
+from app.core.errors import ProblemException
 from app.core.passwords import hash_password, verify_password
 from app.domain.plans import add_months, format_price, get_plan
 from app.repositories.account_store import AccountStore, EmailTaken, Subscription
@@ -104,14 +105,33 @@ def test_free_uses_are_counted_against_every_key(store):
 def test_entitlement_without_a_plan_uses_the_free_limits(store, settings):
     ent = billing.resolve_entitlement(store, settings, user=None, device_id="d", client_ip="1.2.3.4", now=NOW)
     assert not ent.paid and ent.max_file_bytes == 2 * 1024 * 1024 and ent.uses_remaining == 3
+    assert ent.usage_keys == ("device:d",)
+
+
+def test_ip_counting_can_be_turned_on(store):
+    ent = billing.resolve_entitlement(
+        store, Settings(free_tier_count_by_ip=True), user=None, device_id="d", client_ip="1.2.3.4", now=NOW,
+    )
     assert ent.usage_keys == ("device:d", "ip:1.2.3.4")
 
 
-def test_ip_counting_can_be_turned_off(store):
-    ent = billing.resolve_entitlement(
-        store, Settings(free_tier_count_by_ip=False), user=None, device_id="d", client_ip="1.2.3.4", now=NOW,
-    )
-    assert ent.usage_keys == ("device:d",)
+def test_signed_out_callers_must_sign_in_when_accounts_are_required(store):
+    settings = Settings(require_account=True)
+    ent = billing.resolve_entitlement(store, settings, user=None, device_id="d", client_ip=None, now=NOW)
+    assert ent.sign_in_required
+    with pytest.raises(ProblemException) as info:
+        billing.ensure_can_start(ent)
+    assert info.value.status == 401 and info.value.code == "sign_in_required"
+
+    signed_in = billing.resolve_entitlement(store, settings, user=_user(store), device_id="d", client_ip=None, now=NOW)
+    assert not signed_in.sign_in_required
+    billing.ensure_can_start(signed_in)
+
+
+def test_oidc_mode_does_not_ask_for_an_account(store):
+    settings = Settings(require_account=True, auth_mode="oidc")
+    ent = billing.resolve_entitlement(store, settings, user=None, device_id="d", client_ip=None, now=NOW)
+    assert not ent.sign_in_required
 
 
 def test_a_plan_bought_now_extends_existing_history(store, settings):

@@ -1,4 +1,5 @@
-"""Plans end to end: the free allowance (3 analyses, 2 MB files), accounts,
+"""Plans end to end: sign-in before any analysis, the free allowance (3
+analyses, 2 MB files, counted per account), accounts,
 demo checkout with a confirmation email, the larger paid file limit, and the
 saved history of paid users."""
 
@@ -25,9 +26,14 @@ from tests.fixtures.postman_builders import pm_collection, pm_request
 PASSWORD = "correct horse battery"
 
 
+def _settings(**overrides) -> Settings:
+    return Settings(newman_runner="fake", rate_limit_enabled=False, trusted_proxy_hops=0, require_account=True,
+                    **overrides)
+
+
 @pytest.fixture
 def env(tmp_path):
-    settings = Settings(newman_runner="fake", rate_limit_enabled=False, trusted_proxy_hops=0)
+    settings = _settings()
     store = AccountStore(":memory:", str(tmp_path / "history"))
     mailer = RecordingMailer()
     app = create_app()
@@ -75,13 +81,27 @@ def _buy(client, plan="monthly"):
     return resp.json()["subscription"]
 
 
-# --- free allowance ---
+# --- sign-in and the free allowance ---
 
 
-def test_anonymous_visitor_gets_three_free_analyses_then_must_choose_a_plan(env):
+def test_signed_out_visitor_must_sign_in_before_any_analysis(env):
     client, _, _ = env
     me = client.get("/api/v1/account/me").json()
-    assert me["user"] is None and me["plan"] is None
+    assert me["user"] is None and me["sign_in_required"] is True
+    for resp in (_inspect(client), _start(client)):
+        assert resp.status_code == 401
+        body = resp.json()
+        assert body["code"] == "sign_in_required"
+        assert "3 analyses with files up to 2.0 MB" in body["detail"]
+    reports = client.post("/api/v1/analyses", files={"files": ("run.json", b"{}", "application/json")})
+    assert reports.json()["code"] == "sign_in_required"
+
+
+def test_new_account_gets_three_free_analyses_then_must_choose_a_plan(env):
+    client, _, _ = env
+    _register(client)
+    me = client.get("/api/v1/account/me").json()
+    assert me["sign_in_required"] is False and me["plan"] is None
     assert me["limits"] == {"max_file_bytes": 2 * MIB, "max_file_mb": 2, "uses_limit": 3, "uses_used": 0,
                             "uses_remaining": 3, "history_retention_days": None}
 
@@ -96,34 +116,61 @@ def test_anonymous_visitor_gets_three_free_analyses_then_must_choose_a_plan(env)
     assert _inspect(client).json()["code"] == "usage_limit_reached"
 
 
+def test_the_count_follows_the_account_across_sign_ins(env):
+    client, _, _ = env
+    _register(client)
+    assert _start(client).status_code == 202
+    client.post("/api/v1/auth/logout")
+    client.cookies.clear()  # another browser
+    assert client.post("/api/v1/auth/login", json={"email": "ada@example.com", "password": PASSWORD}).status_code == 200
+    assert client.get("/api/v1/account/me").json()["limits"]["uses_remaining"] == 2
+
+
+def test_each_account_has_its_own_allowance(env):
+    client, _, _ = env
+    _register(client)
+    for _ in range(3):
+        assert _start(client).status_code == 202
+    client.post("/api/v1/auth/logout")
+    client.cookies.clear()  # another browser
+    _register(client, email="eve@example.com", name="Eve")
+    assert client.get("/api/v1/account/me").json()["limits"]["uses_remaining"] == 3
+    assert _start(client).status_code == 202
+
+
+def test_a_second_account_in_the_same_browser_does_not_reset_the_allowance(env):
+    client, _, _ = env
+    _register(client)
+    for _ in range(3):
+        assert _start(client).status_code == 202
+    client.post("/api/v1/auth/logout")  # the browser id cookie stays
+    _register(client, email="eve@example.com", name="Eve")
+    assert client.get("/api/v1/account/me").json()["limits"]["uses_remaining"] == 0
+    assert _start(client).status_code == 402
+
+
+def test_counting_by_ip_is_optional(env):
+    client, _, _ = env
+    client.app.dependency_overrides[get_settings] = lambda: _settings(free_uses=1, free_tier_count_by_ip=True)
+    _register(client)
+    assert _start(client).status_code == 202
+    client.post("/api/v1/auth/logout")
+    client.cookies.clear()
+    _register(client, email="eve@example.com", name="Eve")
+    assert _start(client).status_code == 402
+
+
 def test_inspecting_does_not_use_up_the_allowance(env):
     client, _, _ = env
+    _register(client)
     for _ in range(5):
         assert _inspect(client).status_code == 200
     assert client.get("/api/v1/account/me").json()["limits"]["uses_remaining"] == 3
 
 
-def test_clearing_cookies_does_not_reset_the_allowance_on_the_same_ip(env):
-    client, _, _ = env
-    client.app.dependency_overrides[get_settings] = lambda: Settings(
-        newman_runner="fake", rate_limit_enabled=False, trusted_proxy_hops=0, free_uses=1,
-    )
-    assert _start(client).status_code == 202
-    client.cookies.clear()
-    assert _start(client).status_code == 402
-
-
-def test_registering_a_new_account_does_not_reset_the_allowance(env):
-    client, _, _ = env
-    for _ in range(3):
-        assert _start(client).status_code == 202
-    _register(client)
-    assert client.get("/api/v1/account/me").json()["limits"]["uses_remaining"] == 0
-    assert _start(client).status_code == 402
-
-
 def test_free_plan_rejects_files_over_2_mb_before_reading_them(env):
     client, _, _ = env
+    _register(client)
     big = _collection(padding=2 * MIB + 10)
     resp = _inspect(client, big)
     assert resp.status_code == 413
@@ -137,6 +184,7 @@ def test_free_plan_rejects_files_over_2_mb_before_reading_them(env):
 
 def test_an_idempotent_repeat_is_not_a_second_use(env):
     client, _, _ = env
+    _register(client)
     headers = {"Idempotency-Key": "attempt-1"}
     data = {"confirm": "true", "supplied_values_json": "{}"}
     first = client.post("/api/v1/execution-jobs", data=data, files=_files(_collection()), headers=headers)

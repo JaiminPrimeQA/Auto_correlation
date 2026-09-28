@@ -9,7 +9,8 @@ export function AccountMenu() {
   const { me, loading, signOut } = useAccount();
   if (loading || !me) return null;
 
-  const chip = me.plan ? (
+  // Signed out with sign-in required: nothing is counted yet, so no chip.
+  const chip = me.sign_in_required ? null : me.plan ? (
     <Link href="/dashboard" className="badge badge-accent whitespace-nowrap" title="Your plan">
       {me.plan.plan_name} plan
     </Link>

@@ -30,7 +30,8 @@ const CATALOG: PlanCatalog = {
 
 function freeMe(remaining = 2): Me {
   return {
-    user: null,
+    user: { id: "u0", email: "grace@example.com", name: "Grace", created_at: Date.now() / 1000 },
+    sign_in_required: false,
     plan: null,
     upcoming: [],
     limits: { max_file_bytes: 2 * MB, max_file_mb: 2, uses_limit: 3, uses_used: 3 - remaining,
@@ -38,10 +39,16 @@ function freeMe(remaining = 2): Me {
   };
 }
 
+/** Signed out: the upload step asks for an account first. */
+function visitorMe(): Me {
+  return { ...freeMe(3), user: null, sign_in_required: true };
+}
+
 function paidMe(): Me {
   const now = Date.now() / 1000;
   return {
     user: { id: "u1", email: "ada@example.com", name: "Ada", created_at: now },
+    sign_in_required: false,
     plan: { id: "s1", plan: "monthly", plan_name: "Monthly", status: "active", price_cents: 900, currency: "USD",
       payment_provider: "demo", payment_ref: "demo_1", purchased_at: now, starts_at: now, expires_at: now + 30 * 86400,
       days_left: 30 },
@@ -74,12 +81,19 @@ describe("account helpers", () => {
 });
 
 describe("AccountMenu", () => {
-  it("shows the free allowance and sign-in for visitors", async () => {
+  it("shows sign-in and pricing, but no allowance, to signed-out visitors", async () => {
+    vi.spyOn(account, "me").mockResolvedValue(visitorMe());
+    render(<AccountProvider><AccountMenu /></AccountProvider>);
+    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/pricing");
+    expect(screen.queryByText(/Free:/)).toBeNull();
+  });
+
+  it("shows a free account how many analyses are left", async () => {
     vi.spyOn(account, "me").mockResolvedValue(freeMe(2));
     render(<AccountProvider><AccountMenu /></AccountProvider>);
     expect(await screen.findByText("Free: 2 of 3 left")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
-    expect(screen.getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/pricing");
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
   });
 
   it("shows the plan, dashboard and sign-out for a subscriber", async () => {
@@ -146,6 +160,16 @@ describe("PlanLimitDialog", () => {
 });
 
 describe("FilesStep plan limits", () => {
+  it("asks a signed-out visitor to create an account before uploading", async () => {
+    vi.spyOn(account, "me").mockResolvedValue(visitorMe());
+    render(<AccountProvider><FilesStep onInspected={() => {}} /></AccountProvider>);
+    expect(await screen.findByRole("heading", { name: "Create a free account to start" })).toBeInTheDocument();
+    expect(screen.getByText(/3 analyses with files up to 2 MB/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create free account" })).toHaveAttribute("href", "/register?next=%2F");
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login?next=%2F");
+    expect(screen.queryByLabelText(/collection file/i)).toBeNull();
+  });
+
   it("states the free allowance and refuses an oversize file before uploading it", async () => {
     vi.spyOn(account, "me").mockResolvedValue(freeMe(2));
     const inspect = vi.spyOn(api, "inspectCollection");

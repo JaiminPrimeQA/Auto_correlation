@@ -157,13 +157,18 @@ class Settings(BaseSettings):
     database_path: str = "data/baseline11.db"
     # Saved history files (collection, JMX, manifest), one folder per entry.
     history_dir: str = "data/history"
-    # Anonymous visitors and accounts without a plan.
+    # Require a signed-in account before any analysis, so every use (free or
+    # paid) is counted against an account. Ignored in OIDC mode, where the
+    # identity provider already gates the API.
+    require_account: bool = True
+    # Accounts without a plan (and anonymous visitors when accounts are optional).
     free_uses: int = 3
     free_max_file_mb: int = 2
-    # Count free uses per client IP as well as per browser, so clearing
-    # cookies does not reset the allowance. Visitors behind one shared IP
-    # share the allowance.
-    free_tier_count_by_ip: bool = True
+    # Count free uses per client IP as well as per account and browser, so
+    # clearing cookies does not reset the allowance. Off by default: with
+    # sign-in required, everyone behind one shared IP (an office, or localhost
+    # while testing) would otherwise share a single allowance.
+    free_tier_count_by_ip: bool = False
     # Proxies in front of the API that append to X-Forwarded-For (the Next.js
     # dev proxy is one). 0 uses the TCP peer address.
     trusted_proxy_hops: int = 1

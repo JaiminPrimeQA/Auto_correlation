@@ -191,10 +191,11 @@ purchases and saved history are stored in `backend/data/` (delete that folder to
 
 | Step | Expected result |
 |------|-----------------|
-| Open the app without signing in | The header shows **Free: 3 of 3 left**; the upload card says files up to 2 MB. |
+| Open the app without signing in | The upload card is replaced by **Create a free account to start** (3 analyses, files up to 2 MB), with **Create free account** and **Sign in** buttons. Nothing can be uploaded while signed out. |
+| Create an account | You return to the upload step. The header shows **Free: 3 of 3 left**; the upload card says files up to 2 MB. |
 | Pick a collection larger than 2 MB and click **Inspect collection** | Nothing is uploaded. The plans dialog opens saying the free plan accepts files up to 2 MB. |
-| Run three analyses (Test D) | The header counts down to **Free: 0 of 3 left**. |
-| Try a fourth | The plans dialog opens: *You have used your free analyses*. Clearing cookies or registering a new account does not reset the count (it is kept per browser, per IP and per account). |
+| Run three analyses (Test D) | The header counts down to **Free: 0 of 3 left**. Signing out and back in (even in another browser) keeps the count. |
+| Try a fourth | The plans dialog opens: *You have used your free analyses*. A second account created in the same browser does not get a new allowance (it is counted per account and per browser). |
 | Click **Choose Monthly** | Checkout asks you to create an account or sign in, then returns to checkout. |
 | Register, then click **Pay $9.00** | *Payment successful*. A welcome email and a purchase receipt arrive (plan, dates, 50 MB limit, 7 days history, amount, reference). Checkout is a **demo**: no card is charged. |
 | Run and generate a plan (Tests D and B) | **Dashboard** lists the analysis with **Collection**, **JMX** and **Manifest** downloads and a *Kept until* date 7 days ahead (30 for 6 months, 90 for yearly). |
@@ -248,6 +249,7 @@ runner, Docker images, Terraform checks and a JMeter smoke test.
 | My earlier analysis disappeared | Analyses are kept in memory for 30 minutes and are lost when the backend restarts. Upload again. |
 | Emails do not arrive | Check the backend log for `email delivery failed`. For Gmail, `B11_SMTP_PASSWORD` must be a 16-character App Password (Google account, Security, App passwords), not the normal password. |
 | The free count is used up while testing | Delete `backend/data/` and restart the backend, or raise `B11_FREE_USES`. |
+| Uploads never hit the limit / no plans dialog | The backend is running old code. Stop every backend window (check `netstat -ano \| findstr :8000`) and start it again as in section 4. Another app's Docker container on port 8000 can also answer instead of this backend. |
 | Collection that calls `localhost` / `127.0.0.1` fails | By design. The collection runs inside an isolated container and private addresses are blocked. Use a publicly reachable test API, or send Newman reports you recorded yourself to the API (Test A). |
 
 ---

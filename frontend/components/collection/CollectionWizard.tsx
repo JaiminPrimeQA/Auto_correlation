@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { api, type AnalysisSummary, type CollectionInspection } from "@/lib/api";
+import { api, ApiError, type AnalysisSummary, type CollectionInspection } from "@/lib/api";
 import { suppliedValuesFor, variablesToAsk } from "@/lib/executionJob";
 import { Stepper } from "@/components/ui/Stepper";
 import { useAccount } from "@/components/account/AccountProvider";
@@ -80,6 +80,12 @@ export function CollectionWizard({
       onJobCreated?.(job.job_id);
       setStep("progress");
     } catch (e) {
+      if (e instanceof ApiError && e.code === "sign_in_required") {
+        // Signed out meanwhile: back to the first step, which asks to sign in.
+        void refreshAccount();
+        startOver();
+        return;
+      }
       setSubmitError(e instanceof Error ? e.message : String(e));
     }
   }
