@@ -173,7 +173,9 @@ def _message(settings: Settings, to: User, subject: str, text: str, html_body: s
     message["To"] = to.email
     message.set_content(text)
     message.add_alternative(html_body, subtype="html")
-    message.get_body(preferencelist=("html",)).add_related(
+    html_part = message.get_body(preferencelist=("html",))
+    assert html_part is not None  # just added above
+    html_part.add_related(
         _logo_png(), maintype="image", subtype="png", cid=f"<{_LOGO_CID}>",
         disposition="inline", filename="baseline11-logo.png",
     )
