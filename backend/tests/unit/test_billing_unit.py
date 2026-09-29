@@ -228,6 +228,14 @@ def test_purchase_email_lists_the_plan_and_escapes_the_name(store, settings):
         assert fact in text_part
 
 
+def test_emails_carry_the_logo_inline(store, settings):
+    message = emails.welcome(settings, _user(store))
+    html_part = message.get_body(preferencelist=("html",)).get_content()
+    [logo] = [p for p in message.walk() if p.get_content_type() == "image/png"]
+    assert logo["Content-ID"] == "<baseline11-logo>" and logo.get_content_disposition() == "inline"
+    assert logo.get_content().startswith(b"\x89PNG") and 'src="cid:baseline11-logo"' in html_part
+
+
 class _FakeSmtp:
     instances: list = []
 
