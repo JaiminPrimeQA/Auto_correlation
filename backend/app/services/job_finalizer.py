@@ -47,6 +47,7 @@ def finalize_job(
 
     def _claim(fresh: ExecutionJob) -> None:
         nonlocal claimed
+        claimed = False  # Reset when DynamoDB retries after a competing claim.
         stale = fresh.finalizing_since is None or now - fresh.finalizing_since > _STALE_CLAIM_SECONDS
         if needs_finalizing(fresh) and stale:
             fresh.finalizing_since = now

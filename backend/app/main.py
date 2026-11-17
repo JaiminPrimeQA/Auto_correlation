@@ -42,7 +42,7 @@ def dependency_checks(settings: Settings) -> dict[str, bool]:
         probes.update({
             "job_store": lambda: deps.get_job_store().get("readiness-probe"),
             "queue": lambda: deps.get_job_queue().ping(),
-            "bucket": lambda: deps.get_object_store().get_bytes("readiness-probe", max_bytes=1),
+            "bucket": lambda: deps.get_object_store().get_bytes("jobs/readiness-probe", max_bytes=1),
         })
     for name, probe in probes.items():
         try:

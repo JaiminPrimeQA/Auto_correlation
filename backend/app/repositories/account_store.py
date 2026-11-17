@@ -474,16 +474,20 @@ class AccountStore:
         address = (email or "").strip().lower()
         if not address or self.get_user_by_email(address) is not None:
             address = f"{user_id}@users.invalid"
-        try:
-            self._run(
-                "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-                (user_id, address, (name or address.split("@")[0])[:120], "!external", now),
-            )
-        except self._sql.integrity_errors:
-            pass  # created concurrently by another request or replica
-        user = self.get_user(user_id)
-        assert user is not None
-        return user
+        # Another subject (or password signup) can claim the same email after
+        # the check above. Only an existing *subject* proves we won that race.
+        for candidate in dict.fromkeys((address, f"{user_id}@users.invalid")):
+            try:
+                self._run(
+                    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (user_id, candidate, (name or candidate.split("@")[0])[:120], "!external", now),
+                )
+            except self._sql.integrity_errors:
+                pass
+            user = self.get_user(user_id)
+            if user is not None:
+                return user
+        raise RuntimeError("Could not create the identity-provider account.")
 
     def get_user_by_email(self, email: str) -> User | None:
         return _user(self._one("SELECT * FROM users WHERE email = ?", (email.lower(),)))

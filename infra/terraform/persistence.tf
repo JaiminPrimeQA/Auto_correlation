@@ -234,11 +234,8 @@ data "aws_iam_policy_document" "api_app_data" {
     sid       = "ListAppObjects"
     actions   = ["s3:ListBucket"]
     resources = [aws_s3_bucket.app.arn]
-    condition {
-      test     = "StringLike"
-      variable = "s3:prefix"
-      values   = ["analyses/*", "history/*"]
-    }
+    # Needed for HEAD of missing/expired analyses to return 404, not 403.
+    # Object access is still scoped above.
   }
 }
 
@@ -260,4 +257,14 @@ resource "aws_iam_role_policy" "worker_protection" {
   name   = "task-protection"
   role   = aws_iam_role.worker.id
   policy = data.aws_iam_policy_document.worker_protection.json
+}
+
+# SMTP submission is separate from the HTTPS egress used by AWS services.
+resource "aws_vpc_security_group_egress_rule" "api_smtp" {
+  count             = var.smtp_host == "" ? 0 : 1
+  security_group_id = aws_security_group.api.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "tcp"
+  from_port         = 587
+  to_port           = 587
 }

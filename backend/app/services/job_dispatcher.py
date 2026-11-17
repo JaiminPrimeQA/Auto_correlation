@@ -15,14 +15,14 @@ from typing import Any, Protocol
 
 
 class JobDispatcher(Protocol):
-    def submit(self, fn: Callable[..., None], /, *args: Any, **kwargs: Any) -> None: ...
+    def submit(self, fn: Callable[..., object], /, *args: Any, **kwargs: Any) -> None: ...
 
 
 class ThreadPoolJobDispatcher:
     def __init__(self, max_workers: int) -> None:
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="b11-job")
 
-    def submit(self, fn: Callable[..., None], /, *args: Any, **kwargs: Any) -> None:
+    def submit(self, fn: Callable[..., object], /, *args: Any, **kwargs: Any) -> None:
         self._executor.submit(fn, *args, **kwargs)
 
     def shutdown(self, wait: bool = False) -> None:
@@ -32,5 +32,5 @@ class ThreadPoolJobDispatcher:
 class InlineJobDispatcher:
     """Runs the job synchronously on the calling thread. Tests only."""
 
-    def submit(self, fn: Callable[..., None], /, *args: Any, **kwargs: Any) -> None:
+    def submit(self, fn: Callable[..., object], /, *args: Any, **kwargs: Any) -> None:
         fn(*args, **kwargs)

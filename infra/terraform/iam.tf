@@ -62,11 +62,8 @@ data "aws_iam_policy_document" "job_data" {
     sid       = "ListJobObjects"
     actions   = ["s3:ListBucket"]
     resources = [aws_s3_bucket.material.arn]
-    condition {
-      test     = "StringLike"
-      variable = "s3:prefix"
-      values   = ["jobs/*"]
-    }
+    # HEAD of an absent key needs unconditioned ListBucket to return 404.
+    # Object read/write permissions remain restricted to jobs/*.
   }
   statement {
     sid       = "EncryptJobData"

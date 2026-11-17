@@ -78,9 +78,9 @@ class BlobBackend(ABC):
 
 
 class FileBlobBackend(BlobBackend):
-    """A directory (local disk, or a shared EFS mount for several tasks).
-    Version tags are random ids written next to the blob; a process-wide lock
-    plus an atomic rename keeps each write all-or-nothing."""
+    """Local development storage for one process/store instance.
+    The lock does not coordinate other processes; use S3 for replicas.
+    Version tags are random ids written next to the blob."""
 
     def __init__(self, root: str | os.PathLike[str]) -> None:
         self.root = Path(root)
@@ -192,7 +192,10 @@ class S3BlobBackend(BlobBackend):
         try:
             out = self.client.put_object(**kwargs)
         except Exception as exc:
-            if self._code(exc) in {"PreconditionFailed", "412", "ConditionalRequestConflict", "409"}:
+            code = self._code(exc)
+            if code in {"PreconditionFailed", "412", "ConditionalRequestConflict", "409"} or (
+                expected_tag and code in {"NoSuchKey", "404", "NotFound"}
+            ):
                 raise AnalysisConflict(key) from exc
             raise
         return str(out.get("ETag", ""))
@@ -227,7 +230,8 @@ class PersistentSessionStore(SessionStore):
         self.backend = backend
         self.ttl = ttl_seconds
         self._key = signing_key.encode("utf-8")
-        self._cache: OrderedDict[str, tuple[str, Analysis]] = OrderedDict()
+        # Cache immutable snapshots, never objects that handlers can mutate.
+        self._cache: OrderedDict[str, tuple[str, bytes]] = OrderedDict()
         self._cache_size = cache_size
         self._lock = threading.RLock()
 
@@ -249,8 +253,8 @@ class PersistentSessionStore(SessionStore):
             raise CorruptSnapshot("Snapshot does not hold an analysis.")
         return analysis
 
-    def _remember(self, analysis_id: str, tag: str, analysis: Analysis) -> None:
-        self._cache[analysis_id] = (tag, analysis)
+    def _remember(self, analysis_id: str, tag: str, blob: bytes) -> None:
+        self._cache[analysis_id] = (tag, blob)
         self._cache.move_to_end(analysis_id)
         while len(self._cache) > self._cache_size:
             self._cache.popitem(last=False)
@@ -258,9 +262,11 @@ class PersistentSessionStore(SessionStore):
     # -- SessionStore --------------------------------------------------------
 
     def create(self, analysis: Analysis) -> None:
-        tag = self.backend.put(_key(analysis.id), self._encode(analysis), expected_tag=None, create_only=True)
+        blob = self._encode(analysis)
+        tag = self.backend.put(_key(analysis.id), blob, expected_tag=None, create_only=True)
+        analysis.storage_tag = tag
         with self._lock:
-            self._remember(analysis.id, tag, analysis)
+            self._remember(analysis.id, tag, blob)
 
     def get(self, analysis_id: str) -> Analysis | None:
         try:
@@ -274,19 +280,20 @@ class PersistentSessionStore(SessionStore):
             self.discard(analysis_id)
             return None
         if cached is not None and cached[0] == current:
-            analysis = cached[1]
+            tag, blob = cached
         else:
             got = self.backend.get(key)
             if got is None:
                 self.discard(analysis_id)
                 return None
             blob, tag = got
-            try:
-                analysis = self._decode(blob)
-            except CorruptSnapshot:
-                return None
             with self._lock:
-                self._remember(analysis_id, tag, analysis)
+                self._remember(analysis_id, tag, blob)
+        try:
+            analysis = self._decode(blob)
+        except CorruptSnapshot:
+            return None
+        analysis.storage_tag = tag
         if analysis.expires_at < time.time():
             self.delete(analysis_id)
             return None
@@ -294,18 +301,20 @@ class PersistentSessionStore(SessionStore):
 
     def save(self, analysis: Analysis) -> None:
         key = _key(analysis.id)
-        with self._lock:
-            cached = self._cache.get(analysis.id)
-        expected = cached[0] if cached is not None else None
+        expected = analysis.storage_tag
+        if not expected:
+            raise AnalysisConflict("Analysis must be loaded or created before saving.")
+        blob = self._encode(analysis)
         try:
             tag = self.backend.put(
-                key, self._encode(analysis), expected_tag=expected, create_only=False,
+                key, blob, expected_tag=expected, create_only=False,
             )
         except AnalysisConflict:
             self.discard(analysis.id)
             raise
+        analysis.storage_tag = tag
         with self._lock:
-            self._remember(analysis.id, tag, analysis)
+            self._remember(analysis.id, tag, blob)
 
     def discard(self, analysis_id: str) -> None:
         with self._lock:

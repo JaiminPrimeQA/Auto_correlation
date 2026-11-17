@@ -3,6 +3,7 @@
 import io
 import json
 import time
+from copy import deepcopy
 
 import boto3
 import pytest
@@ -51,6 +52,17 @@ def test_reconcile_fails_a_lost_job_with_a_clear_message():
     job = store.get("job_1")
     assert (job.state, job.error_code, job.worker_active) == (ExecutionJobState.FAILED, "worker_lost", False)
     assert "Run the job again" in job.error_detail
+
+
+def test_reconcile_does_not_fail_a_job_that_heartbeated_after_the_read():
+    store = InMemoryExecutionJobStore(ttl_seconds=3600)
+    store.create(_job(heartbeat_age=900, worker_active=True))
+    stale = deepcopy(store.get("job_1"))
+    store.mutate("job_1", lambda job: setattr(job, "heartbeat_at", time.time()))
+    assert reconcile_stale(stale, store, SETTINGS, now=time.time()) is False
+    job = store.get("job_1")
+    assert job.state == ExecutionJobState.RUNNING_BASELINE
+    assert job.worker_active is True
 
 
 def test_heartbeat_stamps_the_job_and_extends_visibility():

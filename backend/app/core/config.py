@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     # --- Session store ---
     session_ttl_seconds: int = 30 * 60
     # `memory`: live objects in this process (development; one replica only).
-    # `file`: signed snapshots in `session_dir` (one host, or a shared EFS mount).
+    # `file`: signed snapshots in `session_dir` (single-process development only).
     # `s3`: signed snapshots in `state_bucket` (production; any number of replicas).
     session_store: Literal["memory", "file", "s3"] = "memory"
     session_dir: str = "data/analyses"

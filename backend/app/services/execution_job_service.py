@@ -180,6 +180,7 @@ def _write_state(
     error_detail: str | None = None,
     extra_warnings: list[str] | None = None,
     analysis_id: str | None = None,
+    condition: Callable[[ExecutionJob], bool] | None = None,
 ) -> bool:
     """Atomically re-read and write `state` onto the job, honoring
     cancellation and never resurrecting a deleted job or overwriting a
@@ -204,6 +205,8 @@ def _write_state(
         # A persistent store may call this again after a conflicting write.
         written = finished = False
         if not fresh.is_active:
+            return
+        if condition is not None and not condition(fresh):
             return
         if fresh.cancel_requested:
             fresh.state = ExecutionJobState.CANCELLED
@@ -354,8 +357,8 @@ def run_job(
     settings: Settings,
     resolver: destination_policy.Resolver | None = None,
     hand_off_reports: Callable[[str, bytes, bytes], None] | None = None,
-) -> None:
-    """Drive a queued execution job through its state machine.
+) -> bool:
+    """Drive a queued execution job; return whether this caller claimed it.
 
     With `hand_off_reports` (the AWS worker), the job stops at ANALYZING once
     both runs succeeded and the callable receives both reports; the API then
@@ -382,13 +385,14 @@ def run_job(
 
     def _claim(fresh: ExecutionJob) -> None:
         nonlocal claimed
+        claimed = False  # DynamoDB may retry this callback with a newer job.
         if fresh.state == ExecutionJobState.QUEUED and not fresh.worker_active:
             fresh.worker_active = True
             claimed = True
 
-    store.mutate(job_id, _claim)
-    if not claimed:
-        return
+    result = store.mutate(job_id, _claim)
+    if result is None or not claimed:
+        return False
 
     try:
         _drive_job(
@@ -409,6 +413,7 @@ def run_job(
     finally:
         # Tolerates a missing job: `mutate` is a no-op returning None then.
         store.mutate(job_id, _release_worker)
+    return True
 
 
 def _release_worker(job: ExecutionJob) -> None:
@@ -502,7 +507,12 @@ def _drive_job(
     _write_state(job_id, store, ExecutionJobState.READY, analysis_id=analysis.id)
 
 
-def fail_job(job_id: str, store: ExecutionJobStore, error_code: str, error_detail: str) -> bool:
+def fail_job(
+    job_id: str, store: ExecutionJobStore, error_code: str, error_detail: str,
+    *, condition: Callable[[ExecutionJob], bool] | None = None,
+) -> bool:
     """Mark an active job FAILED with a fixed, user-safe message (used by
     launchers and the worker outside `run_job`). Returns whether it was written."""
-    return _write_state(job_id, store, ExecutionJobState.FAILED, error_code=error_code, error_detail=error_detail)
+    return _write_state(
+        job_id, store, ExecutionJobState.FAILED, error_code=error_code, error_detail=error_detail, condition=condition,
+    )

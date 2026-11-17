@@ -127,7 +127,7 @@ class Worker:
             visibility_timeout=self._settings.job_visibility_timeout_seconds,
         )
         with heartbeat:
-            execution_job_service.run_job(
+            claimed = execution_job_service.run_job(
                 job_id,
                 collection_data=material.collection_data,
                 environment_data=material.environment_data,
@@ -140,6 +140,10 @@ class Worker:
                 settings=self._settings,
                 hand_off_reports=self._hand_off,
             )
+        if not claimed:
+            # Another worker won the claim after our initial read. Its input,
+            # reports and queue message must remain available to it.
+            return
         self._objects.delete(material_key(job_id))
         final = self._store.get(job_id)
         if final is None or not final.reports_ready:

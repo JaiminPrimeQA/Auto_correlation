@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import boto3
 import pytest
 from fastapi.testclient import TestClient
 
@@ -17,7 +18,9 @@ from app.repositories.persistent_analysis_store import (
     AnalysisConflict,
     FileBlobBackend,
     PersistentSessionStore,
+    S3BlobBackend,
 )
+from tests.fixtures.aws import BUCKET, REGION, aws_mocks
 from tests.fixtures.har_builders import har, login_flow
 
 KEY = "test-signing-key-0123456789"
@@ -140,3 +143,75 @@ def test_a_failed_request_does_not_leave_half_applied_changes(tmp_path):
 def test_signing_key_is_required():
     with pytest.raises(ValueError):
         PersistentSessionStore(FileBlobBackend("."), ttl_seconds=60, signing_key="short")
+
+
+def test_requests_on_same_replica_do_not_share_uncommitted_changes(tmp_path):
+    store = make_store(tmp_path)
+    analysis_id = new_analysis(replica(store))
+    left, right = store.get(analysis_id), store.get(analysis_id)
+    assert left is not None and right is not None
+    left.warnings.append("uncommitted")
+    assert "uncommitted" not in right.warnings
+    store.save(right)
+    with pytest.raises(AnalysisConflict):
+        store.save(left)
+
+
+def test_eviction_does_not_let_a_stale_request_overwrite_newer_state(tmp_path):
+    store = make_store(tmp_path)
+    analysis_id = new_analysis(replica(store))
+    stale = store.get(analysis_id)
+    other = make_store(tmp_path)
+    fresh = other.get(analysis_id)
+    assert stale is not None and fresh is not None
+    fresh.warnings.append("newer state")
+    other.save(fresh)
+    store.discard(analysis_id)
+    with pytest.raises(AnalysisConflict):
+        store.save(stale)
+
+
+def test_loading_newer_state_does_not_upgrade_an_older_requests_version(tmp_path):
+    store = make_store(tmp_path)
+    analysis_id = new_analysis(replica(store))
+    stale = store.get(analysis_id)
+    other = make_store(tmp_path)
+    fresh = other.get(analysis_id)
+    assert stale is not None and fresh is not None
+    fresh.warnings.append("newer state")
+    other.save(fresh)
+    assert store.get(analysis_id) is not None
+    with pytest.raises(AnalysisConflict):
+        store.save(stale)
+
+
+def test_saving_after_delete_does_not_resurrect_analysis(tmp_path):
+    store = make_store(tmp_path)
+    analysis_id = new_analysis(replica(store))
+    loaded = store.get(analysis_id)
+    assert loaded is not None
+    store.delete(analysis_id)
+    with pytest.raises(AnalysisConflict):
+        store.save(loaded)
+
+
+def test_s3_snapshots_use_conditional_writes_and_survive_a_restart():
+    with aws_mocks():
+        client = boto3.client("s3", region_name=REGION)
+        client.create_bucket(Bucket=BUCKET, CreateBucketConfiguration={"LocationConstraint": REGION})
+        blobs = S3BlobBackend(client, BUCKET)
+        store = PersistentSessionStore(blobs, ttl_seconds=1800, signing_key=KEY)
+        analysis_id = new_analysis(replica(store))
+        first, stale = store.get(analysis_id), store.get(analysis_id)
+        assert first is not None and stale is not None
+        first.warnings.append("saved in S3")
+        store.save(first)
+        with pytest.raises(AnalysisConflict):
+            store.save(stale)
+        restarted = PersistentSessionStore(blobs, ttl_seconds=1800, signing_key=KEY)
+        loaded = restarted.get(analysis_id)
+        assert loaded is not None and "saved in S3" in loaded.warnings
+        assert restarted.get("missing") is None
+        restarted.delete(analysis_id)
+        with pytest.raises(AnalysisConflict):
+            store.save(first)

@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+from copy import deepcopy
 
 import boto3
 import pytest
@@ -68,6 +69,24 @@ def test_builds_the_analysis_for_the_owner_and_cleans_up(env):
     assert analysis.owner_key == "user:a"
     assert analysis.mode.value == "two_run"
     assert env["s3"].list_objects_v2(Bucket=BUCKET).get("Contents") is None
+
+
+def test_losing_a_retried_finalization_claim_leaves_reports_for_the_winner(env, monkeypatch):
+    _ready_for_analysis(env)
+    store = env["store"]
+    original_mutate = store.mutate
+
+    def competing_mutate(job_id, fn):
+        if fn.__name__ == "_claim":
+            fn(deepcopy(store.get(job_id)))
+            original_mutate(job_id, lambda job: setattr(job, "finalizing_since", time.time()))
+        return original_mutate(job_id, fn)
+
+    monkeypatch.setattr(store, "mutate", competing_mutate)
+    _finalize(env)
+    assert store.get("job_1").state == ExecutionJobState.ANALYZING
+    assert env["analyses"]._data == {}
+    assert len(env["s3"].list_objects_v2(Bucket=BUCKET)["Contents"]) == 2
 
 
 def test_concurrent_finalizers_build_one_analysis(env):

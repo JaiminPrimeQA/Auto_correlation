@@ -31,8 +31,8 @@ DEVICE_COOKIE = "b11_device"
 @lru_cache
 def get_store() -> SessionStore:
     """Where analyses live. `memory` (development, single process) keeps the
-    live objects; `file` and `s3` keep signed snapshots in shared storage so
-    restarts, redeploys and several API replicas all see the same state."""
+    live objects; `file` persists local development snapshots; `s3` shares
+    snapshots across production API replicas and redeploys."""
     settings = get_settings()
     backend = settings.session_store
     if backend == "memory":

@@ -148,10 +148,15 @@ def reconcile_stale(job: ExecutionJob, store: ExecutionJobStore, settings: Setti
     if reason is None:
         return False
     log.warning(f"stale job: {reason[0]}", extra={"stage": "reconcile", "job_id": job.id})
-    written = execution_job_service.fail_job(job.id, store, *reason)
+    # A heartbeat or worker claim can arrive after the API loaded `job`.
+    # Recheck under the store's atomic mutation (including DynamoDB retries).
+    written = execution_job_service.fail_job(
+        job.id, store, *reason, condition=lambda fresh: stale_reason(fresh, settings, now=now) == reason,
+    )
 
     def _release(j: ExecutionJob) -> None:
         j.worker_active = False
 
-    store.mutate(job.id, _release)
+    if written:
+        store.mutate(job.id, _release)
     return written

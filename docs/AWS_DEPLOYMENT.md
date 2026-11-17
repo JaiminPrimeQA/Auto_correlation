@@ -25,7 +25,7 @@ API ──▶ PostgreSQL (RDS, Multi-AZ)   accounts, sessions, plans, free uses,
 
 | Piece | Where its state lives | Survives task replacement? |
 |-------|-----------------------|----------------------------|
-| Analyses in progress (rules, candidates, generated JMX) | S3 `analyses/`, HMAC-signed, 30-min TTL | Yes |
+| Saved analysis state (rules, candidates, generated JMX) | S3 `analyses/`, HMAC-signed, 30-min TTL | Yes; in-flight processing is not checkpointed |
 | Accounts, sign-in sessions, plans, free-use counters | RDS PostgreSQL | Yes |
 | Saved history files (paid plans) | S3 `history/` | Yes |
 | Execution jobs | DynamoDB + S3 `jobs/` + SQS | Yes |
@@ -67,12 +67,12 @@ replicas and deploys with zero downtime.
 - An SMTP provider for account emails (Amazon SES works): host, user, password, from-address.
 - Expected peak simultaneous jobs, largest file size you will accept, and a monthly budget.
 
-Tools on the machine you deploy from: Terraform ≥ 1.6, AWS CLI v2, Docker.
+Tools on the machine you deploy from: Terraform ≥ 1.10, AWS CLI v2, Docker.
 
 ## 4. Deployment steps
 
 ### Step 1 — Freeze a release
-Merge the release branch, tag it (e.g. `v1.0.0`), and build every image from that tag.
+Tag the reviewed commit on the release branch (e.g. `v1.0.0`) and build every image from that tag.
 Never ship real recordings or `.env` files: `reports/download_*`, `*.har` and `.env`
 are git-ignored.
 
@@ -111,22 +111,39 @@ terraform apply -var-file=staging.tfvars -target=aws_ecr_repository.repo
 ```
 
 ### Step 5 — Build and push the three images
+Run these commands from the repository root (return there after step 4).
 ```bash
 REGISTRY=123456789012.dkr.ecr.eu-west-1.amazonaws.com
-aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY
+aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin $REGISTRY
 docker build -f docker/api/Dockerfile -t $REGISTRY/b11-staging/api:v1.0.0 .
-docker build -f docker/newman-runner/Dockerfile -t $REGISTRY/b11-staging/newman-runner:v1.0.0 .
+docker build -t $REGISTRY/b11-staging/newman-runner:v1.0.0 docker/newman-runner
 docker build -f docker/frontend/Dockerfile \
   --build-arg NEXT_PUBLIC_OIDC_AUTHORITY=https://your-idp.example.com/ \
   --build-arg NEXT_PUBLIC_OIDC_CLIENT_ID=your-client-id \
   --build-arg NEXT_PUBLIC_OIDC_AUDIENCE=baseline11-api \
   -t $REGISTRY/b11-staging/frontend:v1.0.0 .
-docker push ...   # all three
+docker push $REGISTRY/b11-staging/api:v1.0.0
+docker push $REGISTRY/b11-staging/newman-runner:v1.0.0
+docker push $REGISTRY/b11-staging/frontend:v1.0.0
 ```
 Use the repository names from `terraform output ecr_repositories`. Tags are immutable:
 a new release always gets a new tag.
 
 ### Step 6 — Apply the rest
+Return to `infra/terraform`. If `smtp_host` is configured, create and populate
+the SMTP secret **before** starting ECS services. A secret without an AWSCURRENT
+value prevents tasks from starting:
+
+```bash
+terraform apply -var-file=staging.tfvars -target=aws_secretsmanager_secret.smtp_password
+aws secretsmanager put-secret-value --region eu-west-1 \
+  --secret-id "$(terraform output -raw smtp_password_secret_arn)" \
+  --secret-string file:///secure/path/smtp-password.txt
+```
+
+Use a private local file outside the repository, or enter the value in Secrets Manager.
+The configured SMTP transport is STARTTLS on port 587; the API security group allows it.
+Then apply all resources:
 ```bash
 terraform plan  -var-file=staging.tfvars -out=staging.plan
 terraform apply staging.plan
@@ -135,12 +152,7 @@ API tasks apply database migrations on start-up (under a lock). To run them as a
 separate step before new tasks take traffic, start a one-off task from the API task
 definition with the command `python -m app.migrate`.
 
-If you set `smtp_host`, put the SMTP password in the created secret, then roll the
-services so they pick it up:
-```bash
-aws secretsmanager put-secret-value --secret-id "$(terraform output -raw smtp_password_secret_arn)" --secret-string '...'
-aws ecs update-service --cluster b11-staging --service api --force-new-deployment
-```
+After changing an injected secret, replace the affected ECS tasks to load its new value.
 
 Point the DNS name at `terraform output load_balancer_dns_name` (alias/CNAME).
 
@@ -168,6 +180,10 @@ the plan, apply, connect DNS, and repeat the end-to-end check.
   API tasks before stopping old ones and rolls back automatically if they fail health checks.
 - **Rotate the state signing key:** update the secret and redeploy. Analyses in progress (≤ 30 min)
   become unreadable and users start them again — do it in a quiet hour.
+- **Database password rotation:** RDS manages and rotates the password, but ECS injects it
+  only at task startup. Coordinate each rotation with replacement API tasks and verify
+  fresh database connections. Automated rotation-triggered deployment or runtime secret
+  refresh is required before unattended production operation.
 - **Scale:** raise `api_desired_count` (API) or `worker_max_tasks` (concurrent jobs). Size API
   memory from the `api-memory` alarm and real upload sizes.
 - **Watch:** the SNS alarm topic (dead letters, failed jobs, jobs waiting, 5xx, unhealthy hosts,
@@ -181,8 +197,13 @@ the plan, apply, connect DNS, and repeat the end-to-end check.
   it in their own JMeter. Running it in the cloud needs its own isolated runner (like Newman's).
 - **Private targets:** the runner subnet blocks private address ranges on purpose, so collections
   that call `localhost` or internal company APIs cannot run in the hosted service.
-- **Analysis of finished jobs** still runs in the API (in the threadpool). If very large job
-  reports load the API, move it to its own queue and worker.
+- **Analysis processing** (uploads, correlation, generation and finished execution reports)
+  still runs in API request threads. It is not a durable background job: a task replacement
+  or request timeout can interrupt it. Shared snapshots preserve already-saved work only.
+  Benchmark large uploads against the ALB's 120-second idle timeout. A separate durable
+  analysis queue/worker remains necessary for restart-safe long-running analysis.
+- **File-backed analysis storage** is for local single-process development, not shared EFS
+  concurrency. Production uses S3 conditional writes and request-local snapshot versions.
 - **Limits that look like interruptions:** Newman runs stop after 5 minutes
   (`B11_JOB_RUN_TIMEOUT_SECONDS`) and analyses expire after 30 minutes
   (`B11_SESSION_TTL_SECONDS`). Raise them deliberately if your users need more.

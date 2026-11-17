@@ -63,11 +63,11 @@ and an API audience, Docker, AWS credentials for the target account.
 
 ## Known limitations
 
-- **One API task.** Analyses (and their rules/JMX state) live in the API process, as in the
-  rest of the product. Scaling the API out requires moving analyses to a shared store first.
-  A redeploy of the API drops open analyses (execution jobs themselves survive in DynamoDB).
+- **Analysis processing.** Saved analyses use S3 and API tasks share PostgreSQL accounts.
+  Processing still runs in API request threads; a deployment can interrupt unsaved work.
+  Durable background analysis remains a follow-up before supporting long-running imports.
 - **DNS pinning.** Fargate cannot pin hosts like the local Docker runner (`--add-host`); DNS
   rebinding is contained by the runner NACL instead.
-- **Dead-lettered jobs.** A job whose message fails delivery three times (repeated worker crashes)
-  stays in its last state until it expires; the `jobs-dead-lettered` alarm fires.
+- **Dead-lettered jobs.** The alarm fires after repeated delivery failures. API polling
+  reconciles stale jobs to a clear failure; collections are not replayed automatically.
 - Newman does not follow redirects (`--ignore-redirects`).

@@ -55,6 +55,15 @@ def test_users_and_duplicate_emails(store):
         _user(store, "Ada@Example.com")
 
 
+def test_external_user_email_race_does_not_merge_accounts_or_fail(store, monkeypatch):
+    original = _user(store)
+    # Simulate a competing signup committing just after the email check.
+    monkeypatch.setattr(store, "get_user_by_email", lambda email: None)
+    external = store.ensure_external_user(subject="other-subject", email=original.email, name=None, now=NOW)
+    assert external.id != original.id
+    assert external.email.endswith("@users.invalid")
+
+
 def test_sessions_expire(store):
     user = _user(store)
     token = store.create_session(user.id, now=NOW, ttl_seconds=60)

@@ -52,6 +52,8 @@ class Analysis:
     # Who may read/modify this analysis (client IP, or `user:{sub}` with OIDC).
     owner_key: str | None = None
     source: str = "newman"  # newman | har
+    # Version read by this request, independent of the process cache.
+    storage_tag: str | None = field(default=None, repr=False, compare=False)
 
     @property
     def sequence_run(self) -> NormalizedRun:

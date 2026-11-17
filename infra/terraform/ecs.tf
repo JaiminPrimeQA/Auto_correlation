@@ -128,7 +128,14 @@ resource "aws_ecs_service" "api" {
     container_name   = "api"
     container_port   = 8000
   }
-  depends_on = [aws_lb_listener.https]
+  depends_on = [
+    aws_lb_listener.https,
+    aws_secretsmanager_secret_version.state_signing_key,
+    aws_iam_role_policy.execution_secrets,
+    aws_iam_role_policy.api_app_data,
+    aws_iam_role_policy.api_data,
+    aws_iam_role_policy.api_queue,
+  ]
 }
 
 # --- Web UI ---
@@ -222,6 +229,13 @@ resource "aws_ecs_service" "worker" {
   lifecycle {
     ignore_changes = [desired_count] # owned by autoscaling
   }
+  depends_on = [
+    aws_secretsmanager_secret_version.state_signing_key,
+    aws_iam_role_policy.execution_secrets,
+    aws_iam_role_policy.worker_data,
+    aws_iam_role_policy.worker_runtime,
+    aws_iam_role_policy.worker_protection,
+  ]
 }
 
 resource "aws_appautoscaling_target" "worker" {

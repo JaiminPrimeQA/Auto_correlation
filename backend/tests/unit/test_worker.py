@@ -1,5 +1,6 @@
 import json
 import time
+from copy import deepcopy
 
 import boto3
 import pytest
@@ -63,6 +64,27 @@ def _worker(env, runner):
 
 def _keys(env):
     return sorted(o["Key"] for o in env["s3"].list_objects_v2(Bucket=BUCKET).get("Contents", []))
+
+
+def test_losing_a_retried_claim_does_not_run_or_delete_another_workers_input(env, monkeypatch):
+    _enqueue(env)
+    store = env["store"]
+    original_mutate = store.mutate
+
+    def competing_mutate(job_id, fn):
+        if fn.__name__ == "_claim":
+            # First conditional write loses, then DynamoDB invokes the
+            # callback again against the winner's now-claimed job.
+            fn(deepcopy(store.get(job_id)))
+            original_mutate(job_id, lambda job: setattr(job, "worker_active", True))
+        return original_mutate(job_id, fn)
+
+    monkeypatch.setattr(store, "mutate", competing_mutate)
+    runner = FakeNewmanRunner([])
+    _worker(env, runner).process_one()
+    assert runner.calls == []
+    assert material_key("job_1") in _keys(env)
+    assert store.get("job_1").worker_active is True
 
 
 def test_runs_both_stages_and_hands_the_reports_to_the_api(env):
