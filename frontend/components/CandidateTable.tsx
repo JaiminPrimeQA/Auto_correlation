@@ -77,6 +77,7 @@ export function CandidateTable({
   }
   async function reject(c: Candidate) {
     await resolve(c, () => api.rejectCandidate(analysisId, c.id), `Rejected \${${c.variable_name}}`);
+    await onRulesChanged(); // refreshes the open-candidate count on the tab
   }
   async function acceptHigh() {
     const r = await api.acceptHigh(analysisId);

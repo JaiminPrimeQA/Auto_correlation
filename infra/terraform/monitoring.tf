@@ -106,3 +106,60 @@ resource "aws_cloudwatch_metric_alarm" "api_unhealthy" {
   alarm_actions       = [aws_sns_topic.alarms.arn]
   treat_missing_data  = "breaching"
 }
+
+resource "aws_cloudwatch_metric_alarm" "jobs_waiting_too_long" {
+  alarm_name          = "${local.name}-jobs-waiting-too-long"
+  alarm_description   = "A job has waited over 10 minutes for a worker (capacity or worker start-up problem)"
+  namespace           = "AWS/SQS"
+  metric_name         = "ApproximateAgeOfOldestMessage"
+  dimensions          = { QueueName = aws_sqs_queue.jobs.name }
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 5
+  threshold           = 600
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_memory" {
+  alarm_name          = "${local.name}-api-memory"
+  alarm_description   = "API tasks are close to their memory limit (large uploads); raise api_memory"
+  namespace           = "AWS/ECS"
+  metric_name         = "MemoryUtilization"
+  dimensions          = { ClusterName = aws_ecs_cluster.main.name, ServiceName = aws_ecs_service.api.name }
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 3
+  threshold           = 85
+  comparison_operator = "GreaterThanThreshold"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "db_cpu" {
+  alarm_name          = "${local.name}-db-cpu"
+  alarm_description   = "PostgreSQL CPU is high"
+  namespace           = "AWS/RDS"
+  metric_name         = "CPUUtilization"
+  dimensions          = { DBInstanceIdentifier = aws_db_instance.main.identifier }
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 3
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "db_storage" {
+  alarm_name          = "${local.name}-db-free-storage"
+  alarm_description   = "PostgreSQL free storage below 2 GiB"
+  namespace           = "AWS/RDS"
+  metric_name         = "FreeStorageSpace"
+  dimensions          = { DBInstanceIdentifier = aws_db_instance.main.identifier }
+  statistic           = "Minimum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 2147483648
+  comparison_operator = "LessThanThreshold"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}

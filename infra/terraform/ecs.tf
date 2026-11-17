@@ -12,7 +12,26 @@ locals {
     { name = "B11_JOB_QUEUE_URL", value = aws_sqs_queue.jobs.url },
     { name = "B11_MAX_CONCURRENT_JOBS_PER_OWNER", value = tostring(var.max_jobs_per_user) },
     { name = "B11_JMETER_MODE", value = "disabled" },
+    # Shared durable state (persistence.tf): nothing lives on a task's disk.
+    { name = "B11_DATABASE_HOST", value = aws_db_instance.main.address },
+    { name = "B11_DATABASE_PORT", value = tostring(aws_db_instance.main.port) },
+    { name = "B11_DATABASE_NAME", value = aws_db_instance.main.db_name },
+    { name = "B11_DATABASE_USER", value = aws_db_instance.main.username },
+    { name = "B11_SESSION_STORE", value = "s3" },
+    { name = "B11_STATE_BUCKET", value = aws_s3_bucket.app.bucket },
+    { name = "B11_HISTORY_BACKEND", value = "s3" },
+    { name = "B11_HISTORY_BUCKET", value = aws_s3_bucket.app.bucket },
   ]
+
+  # Injected by the execution role at task start. A changed secret reaches
+  # running tasks only after they are replaced (force a new deployment).
+  app_secrets = concat(
+    [
+      { name = "B11_DATABASE_PASSWORD", valueFrom = "${local.db_secret_arn}:password::" },
+      { name = "B11_STATE_SIGNING_KEY", valueFrom = aws_secretsmanager_secret.state_signing_key.arn },
+    ],
+    [for arn in aws_secretsmanager_secret.smtp_password[*].arn : { name = "B11_SMTP_PASSWORD", valueFrom = arn }],
+  )
 
   log_config = {
     for svc in ["api", "frontend", "worker", "runner"] : svc => {
@@ -40,15 +59,15 @@ resource "aws_cloudwatch_log_group" "service" {
   retention_in_days = var.log_retention_days
 }
 
-# --- API: one task. Analyses are held in the API process (existing design),
-# so it must not be scaled out until analyses move to a shared store. ---
+# --- API: stateless (analyses in S3, accounts in PostgreSQL), so it runs as
+# several tasks across both AZs and deploys without downtime. ---
 
 resource "aws_ecs_task_definition" "api" {
   family                   = "${local.name}-api"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = 1024
-  memory                   = 2048
+  cpu                      = var.api_cpu
+  memory                   = var.api_memory
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.api.arn
   runtime_platform {
@@ -66,8 +85,17 @@ resource "aws_ecs_task_definition" "api" {
       { name = "B11_OIDC_ISSUER", value = var.oidc_issuer },
       { name = "B11_OIDC_AUDIENCE", value = var.oidc_audience },
       { name = "B11_CORS_ORIGINS", value = "https://${var.domain_name}" },
+      { name = "B11_APP_BASE_URL", value = "https://${var.domain_name}" },
+      { name = "B11_BILLING_PROVIDER", value = "disabled" },
+      { name = "B11_COOKIE_SECURE", value = "true" },
+      { name = "B11_TRUSTED_PROXY_HOPS", value = "1" },
+      { name = "B11_SMTP_HOST", value = var.smtp_host },
+      { name = "B11_SMTP_USERNAME", value = var.smtp_username },
+      { name = "B11_MAIL_FROM_ADDRESS", value = var.mail_from_address },
     ])
+    secrets          = local.app_secrets
     mountPoints      = [{ sourceVolume = "tmp", containerPath = "/tmp" }]
+    stopTimeout      = 60
     logConfiguration = local.log_config["api"]
   }])
   volume {
@@ -76,14 +104,20 @@ resource "aws_ecs_task_definition" "api" {
 }
 
 resource "aws_ecs_service" "api" {
-  name                               = "api"
-  cluster                            = aws_ecs_cluster.main.id
-  task_definition                    = aws_ecs_task_definition.api.arn
-  desired_count                      = 1
-  launch_type                        = "FARGATE"
-  deployment_minimum_healthy_percent = 0
-  deployment_maximum_percent         = 100
+  name            = "api"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.api.arn
+  desired_count   = var.api_desired_count
+  launch_type     = "FARGATE"
+  # Start replacements before stopping old tasks; roll back a failing release.
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+  health_check_grace_period_seconds  = 60
   enable_execute_command             = false
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
   network_configuration {
     subnets          = aws_subnet.private[*].id
     security_groups  = [aws_security_group.api.id]
@@ -116,11 +150,17 @@ resource "aws_ecs_task_definition" "frontend" {
 }
 
 resource "aws_ecs_service" "frontend" {
-  name            = "frontend"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.frontend.arn
-  desired_count   = 2
-  launch_type     = "FARGATE"
+  name                               = "frontend"
+  cluster                            = aws_ecs_cluster.main.id
+  task_definition                    = aws_ecs_task_definition.frontend.arn
+  desired_count                      = 2
+  launch_type                        = "FARGATE"
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
   network_configuration {
     subnets          = aws_subnet.private[*].id
     security_groups  = [aws_security_group.frontend.id]
@@ -158,7 +198,9 @@ resource "aws_ecs_task_definition" "worker" {
       { name = "B11_RUNNER_SUBNETS", value = join(",", aws_subnet.runner[*].id) },
       { name = "B11_RUNNER_SECURITY_GROUPS", value = aws_security_group.runner.id },
     ])
+    secrets          = local.app_secrets
     mountPoints      = [{ sourceVolume = "tmp", containerPath = "/tmp" }]
+    stopTimeout      = 120
     logConfiguration = local.log_config["worker"]
   }])
   volume {

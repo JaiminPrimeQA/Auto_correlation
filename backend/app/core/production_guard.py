@@ -35,8 +35,11 @@ def _storage_problems(settings: Settings) -> list[str]:
     from ..repositories.account_store import is_postgres_url
 
     problems = []
-    if not (settings.database_url and is_postgres_url(settings.database_url)):
-        problems.append("B11_DATABASE_URL must be a postgresql:// URL: accounts must be shared by every replica.")
+    if not is_postgres_url(settings.account_database):
+        problems.append(
+            "B11_DATABASE_URL (or B11_DATABASE_HOST/USER/PASSWORD) must point at PostgreSQL: "
+            "accounts must be shared by every replica."
+        )
     if settings.history_backend != "s3" or not settings.history_bucket:
         problems.append("B11_HISTORY_BACKEND=s3 and B11_HISTORY_BUCKET are required: task disks are not durable.")
     if settings.session_store != "s3" or not settings.state_bucket:

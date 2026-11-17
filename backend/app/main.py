@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
@@ -32,8 +33,8 @@ def dependency_checks(settings: Settings) -> dict[str, bool]:
     from .api import deps
 
     checks: dict[str, bool] = {}
-    probes = {}
-    if settings.database_url:
+    probes: dict[str, Callable[[], object]] = {}
+    if settings.database_url or settings.database_host:
         probes["database"] = lambda: deps.get_account_store().ping()
     if settings.session_store != "memory":
         probes["analysis_store"] = lambda: deps.get_store().get("readiness-probe")

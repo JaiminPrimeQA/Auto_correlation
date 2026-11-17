@@ -53,7 +53,7 @@ backend/app/
     jmx_validator.py      re-parse, hashTree pairing, ${var} defined-before-use
     manifest_builder.py   generation manifest + dependency flow
     graph_builder.py      API dependency graph (nodes + producer->consumer edges)
-  repositories/           ephemeral TTL session store (Redis-swappable interface)
+  repositories/           analysis store (memory / signed S3 snapshots), accounts (SQLite / PostgreSQL)
   utils/                  masking · encoding · naming · xml
 frontend/                 Next.js App Router + TypeScript + Tailwind
 scripts/                  mock_api.py · smoke_test.py · provision_jmeter.(sh|ps1)
@@ -293,7 +293,7 @@ Results are saved in `samples/webhook-validation.json`.
 - Strict file-size (25 MiB default) and JSON complexity bounds (depth/array/scalar/total).
 - No script execution, no XML parsing of untrusted bodies without hardening (`defusedxml`), **no outbound requests** during parsing/analysis/generation.
 - Secrets (Authorization, API keys, tokens, GUIDs, sensitive cookies) are **masked in the UI** and **redacted from logs**; logs carry request ids, stages, counts, durations and error codes — never bodies or credentials.
-- Analysis state is **ephemeral** (30-min TTL, in-memory, cryptographically-random ids) and behind a `SessionStore` interface a Redis implementation can replace. `DELETE /api/v1/analyses/{id}` removes it immediately.
+- Analysis state is **ephemeral** (30-min TTL, cryptographically-random ids). Locally it is held in memory; in production it is kept as HMAC-signed snapshots in S3 (`B11_SESSION_STORE=s3`) so restarts, redeploys and several API replicas share it. `DELETE /api/v1/analyses/{id}` removes it immediately.
 - RFC 9457 problem+json errors with stable machine-readable codes; no tracebacks in production responses. Security headers + configurable CORS (no wildcard in production).
 
 ---
@@ -302,7 +302,7 @@ Results are saved in `samples/webhook-validation.json`.
 
 - HTML/text producer extraction targets `<input name=… value=…>` and is intentionally lower-confidence; complex HTML may need a manual boundary/regex rule.
 - Alignment resolves ambiguous mappings conservatively; a manual ambiguous-mapping resolver UI is a natural next step.
-- The session store is in-memory for the MVP; wire the Redis implementation for multi-worker deployments.
+- Production deployment on AWS Fargate (PostgreSQL, S3, SQS, ECS) is described in [docs/AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md).
 - JSON export supports JSONPath. JMESPath rules are rejected during generation;
   they are not silently converted to JSONPath.
 - Multipart file uploads carry metadata only (no captured file bytes are embedded).

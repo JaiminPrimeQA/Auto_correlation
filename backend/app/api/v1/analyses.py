@@ -24,7 +24,6 @@ from ...services.billing import DAY, Entitlement
 from ...services.jmx_builder import BuildOptions, JmxBuilder
 from ...services.jmx_validator import validate_jmx
 from ...services.manifest_builder import build_manifest
-from ..persistence import untrack
 from ..deps import (
     enforce_rate_limit,
     get_account_store,
@@ -34,6 +33,7 @@ from ..deps import (
     get_store,
     require_analysis,
 )
+from ..persistence import untrack
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 log = get_logger("analyses")

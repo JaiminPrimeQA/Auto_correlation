@@ -200,6 +200,8 @@ def analysis_summary(analysis: Analysis) -> dict:
         "comparison_health": health_dto(analysis.comparison_run.health) if analysis.comparison_run else None,
         "alignment": alignment_dto(analysis.alignment),
         "candidate_count": len(analysis.candidates),
+        # Still waiting for accept/reject (what the Candidates tab lists).
+        "open_candidate_count": sum(1 for c in analysis.candidates if c.state.value == "suggested"),
         "summary": analysis.summary.model_dump(mode="json"),
         "insight_count": len(analysis.insights),
         "readiness": analysis.readiness.model_dump(mode="json"),

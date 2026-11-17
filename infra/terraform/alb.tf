@@ -18,14 +18,17 @@ resource "aws_lb_target_group" "api" {
   protocol    = "HTTP"
   target_type = "ip"
   vpc_id      = aws_vpc.main.id
+  # Readiness: a task is routed traffic only once it reaches PostgreSQL, S3,
+  # DynamoDB and SQS.
   health_check {
-    path                = "/health"
+    path                = "/health/ready"
     matcher             = "200"
     interval            = 15
     healthy_threshold   = 2
     unhealthy_threshold = 3
   }
-  deregistration_delay = 30
+  # Large uploads can take a while; let in-flight requests finish on deploys.
+  deregistration_delay = 60
 }
 
 resource "aws_lb_target_group" "frontend" {

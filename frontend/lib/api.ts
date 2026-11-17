@@ -114,6 +114,8 @@ export interface AnalysisSummary {
     coverage: number;
   } | null;
   candidate_count: number;
+  /** Candidates still waiting for accept/reject. */
+  open_candidate_count?: number;
   summary: ClassificationSummary;
   insight_count: number;
   readiness: Readiness;

@@ -27,8 +27,8 @@ from ...schemas import presenters
 from ...services import billing, execution_job_service
 from ...services.billing import DAY, Entitlement
 from ...services.job_finalizer import finalize_job, needs_finalizing
-from ...services.job_liveness import reconcile_stale
 from ...services.job_launcher import JobLauncher, RunMaterial
+from ...services.job_liveness import reconcile_stale
 from ...services.postman_inspector import inspect_collection
 from ..deps import (
     enforce_rate_limit,

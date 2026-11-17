@@ -1,11 +1,11 @@
 # Baseline11 on AWS (Terraform)
 
 Deploys the Postman-collection execution product as **API service + queue + isolated
-ECS/Fargate workers** (spec §5.2). Nothing here has been applied to a real account
+ECS/Fargate workers** (spec §5.2). Step-by-step deployment: [docs/AWS_DEPLOYMENT.md](../../docs/AWS_DEPLOYMENT.md). Nothing here has been applied to a real account
 by the authors; `terraform validate` and a Trivy misconfiguration scan pass.
 
 ```
-Internet ─HTTPS─▶ ALB ─┬─ /api/*, /health* ─▶ API (Fargate, 1 task) ──▶ DynamoDB, S3 (KMS), SQS
+Internet ─HTTPS─▶ ALB ─┬─ /api/*, /health* ─▶ API (Fargate, 2+ tasks) ──▶ RDS PostgreSQL, DynamoDB, S3 (KMS), SQS
                        └─ everything else ──▶ Web UI (Fargate, 2 tasks)
 SQS ─▶ Worker (Fargate, 0..N, one job per task) ──RunTask──▶ Newman runner task per run
                                                               (runner subnets, no task role)
@@ -20,6 +20,7 @@ SQS ─▶ Worker (Fargate, 0..N, one job per task) ──RunTask──▶ Newma
 | `iam.tf` | Execution role; API role (table, bucket `jobs/*`, KMS, SendMessage); worker role (same data + queue consume, `RunTask` of the runner family in this cluster only, `PassRole` of the execution role only). **The runner has no task role.** |
 | `ecs.tf` | Cluster, log groups, task definitions and services, worker autoscaling on queue depth |
 | `alb.tf` | HTTPS listener (TLS 1.2/1.3), HTTP→HTTPS redirect, path routing |
+| `persistence.tf` | RDS PostgreSQL (KMS, TLS-only, Multi-AZ, backups, RDS-managed password), app bucket (`analyses/`, `history/`), state signing key and SMTP secrets, task-protection permission for the worker |
 | `monitoring.tf` | SNS alarm topic (own KMS key), alarms: dead-lettered jobs, failed jobs, API 5xx, API unhealthy |
 
 ## Security model (why it is built this way)

@@ -27,3 +27,17 @@ output "ecs_cluster" {
 output "alarm_topic_arn" {
   value = aws_sns_topic.alarms.arn
 }
+
+output "database_endpoint" {
+  value = aws_db_instance.main.address
+}
+
+output "app_bucket" {
+  description = "Analyses in progress (analyses/) and saved history (history/)."
+  value       = aws_s3_bucket.app.bucket
+}
+
+output "smtp_password_secret_arn" {
+  description = "Put the SMTP password here (when smtp_host is set)."
+  value       = try(aws_secretsmanager_secret.smtp_password[0].arn, null)
+}

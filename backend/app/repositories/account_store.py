@@ -364,7 +364,8 @@ class _PostgresDatabase(_Database):
                 "CREATE TABLE IF NOT EXISTS schema_migrations "
                 "(version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())"
             )
-            done = {r["version"] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+            rows: list[Any] = conn.execute("SELECT version FROM schema_migrations").fetchall()
+            done = {r["version"] for r in rows}
             applied = 0
             for version, script in MIGRATIONS:
                 if version in done:
@@ -380,7 +381,7 @@ class _PostgresDatabase(_Database):
         # A session-level advisory lock held for the job's duration: only one
         # replica runs it; the others skip this round instead of waiting.
         with self._pool.connection() as conn:
-            row = conn.execute("SELECT pg_try_advisory_lock(hashtext(%s)) AS got", (name,)).fetchone()
+            row: Any = conn.execute("SELECT pg_try_advisory_lock(hashtext(%s)) AS got", (name,)).fetchone()
             got = bool(row and row["got"])
             try:
                 yield got

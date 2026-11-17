@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     # over database_path and every replica shares the same accounts. Inject it
     # from a secret store; never bake it into an image.
     database_url: str | None = None
+    # Or the parts of it (how ECS injects an RDS-managed secret): the password
+    # arrives as its own secret value, never in a plain environment variable.
+    database_host: str | None = None
+    database_port: int = 5432
+    database_name: str = "baseline11"
+    database_user: str | None = None
+    database_password: str | None = None
+    database_sslmode: str = "require"
     database_pool_size: int = 10
     # Apply pending schema migrations at start-up (under an advisory lock).
     # Turn off when migrations run as a separate one-off task.
@@ -242,7 +250,17 @@ class Settings(BaseSettings):
 
     @property
     def account_database(self) -> str:
-        return self.database_url or self.database_path
+        if self.database_url:
+            return self.database_url
+        if self.database_host and self.database_user:
+            from urllib.parse import quote
+
+            password = quote(self.database_password or "", safe="")
+            return (
+                f"postgresql://{quote(self.database_user, safe='')}:{password}@{self.database_host}:"
+                f"{self.database_port}/{quote(self.database_name, safe='')}?sslmode={self.database_sslmode}"
+            )
+        return self.database_path
 
     @property
     def is_production(self) -> bool:

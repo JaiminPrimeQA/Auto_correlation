@@ -53,7 +53,7 @@ function Results({
   const tabs: { id: Tab; label: string }[] = [
     { id: "health", label: "Run health" },
     { id: "explorer", label: "Explorer" },
-    { id: "candidates", label: `Candidates (${summary.candidate_count})` },
+    { id: "candidates", label: `Candidates (${summary.open_candidate_count ?? summary.candidate_count})` },
     { id: "classification", label: `Classification (${summary.insight_count})` },
     { id: "graph", label: "Dependency graph" },
     { id: "manual", label: "Add rule" },

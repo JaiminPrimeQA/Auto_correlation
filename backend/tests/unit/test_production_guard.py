@@ -84,6 +84,13 @@ def test_demo_billing_is_refused_in_production():
     assert any("B11_BILLING_PROVIDER" in p for p in exc.value.problems)
 
 
+def test_database_url_can_be_assembled_from_rds_secret_parts():
+    settings = Settings(**{**_SAFE, "database_url": None, "database_host": "db.internal",
+                           "database_user": "b11", "database_password": "p@ss/word:1"})
+    assert settings.account_database == "postgresql://b11:p%40ss%2Fword%3A1@db.internal:5432/baseline11?sslmode=require"
+    check_production_settings(settings)
+
+
 def test_local_account_database_is_refused_in_production():
     # A SQLite file (or :memory:) lives on one task's disk; replicas need PostgreSQL.
     for path in (":memory:", "data/baseline11.db"):

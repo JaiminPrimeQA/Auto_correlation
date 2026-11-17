@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { account, type Me } from "@/lib/account";
+import { isAuthEnabled, signOut as oidcSignOut } from "@/lib/auth";
 
 interface AccountState {
   me: Me | null;
@@ -37,6 +38,12 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // With an identity provider, signing out ends that session (and leaves
+    // the app); the account itself is linked to the provider's identity.
+    if (isAuthEnabled()) {
+      await oidcSignOut();
+      return;
+    }
     try {
       await account.logout();
     } finally {

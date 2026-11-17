@@ -85,3 +85,92 @@ variable "alarm_email" {
   type        = string
   default     = ""
 }
+
+# --- API sizing and availability ---
+
+variable "api_desired_count" {
+  description = "API tasks. Keep >= 2 so a deploy or an AZ failure leaves one serving."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.api_desired_count >= 1
+    error_message = "api_desired_count must be at least 1."
+  }
+}
+
+variable "api_cpu" {
+  description = "API task CPU units (2048 = 2 vCPU). Benchmark with your largest uploads."
+  type        = number
+  default     = 2048
+}
+
+variable "api_memory" {
+  description = "API task memory in MiB. Parsing large JSON expands it several times in memory."
+  type        = number
+  default     = 8192
+}
+
+# --- PostgreSQL ---
+
+variable "db_engine_version" {
+  description = "RDS PostgreSQL engine version (major 16)."
+  type        = string
+  default     = "16"
+}
+
+variable "db_instance_class" {
+  description = "RDS instance class."
+  type        = string
+  default     = "db.t4g.small"
+}
+
+variable "db_allocated_storage" {
+  description = "Initial storage in GiB (autoscaling up to 4x)."
+  type        = number
+  default     = 20
+}
+
+variable "db_multi_az" {
+  description = "Standby in a second AZ. true for production; false is cheaper for staging."
+  type        = bool
+  default     = true
+}
+
+variable "db_backup_retention_days" {
+  description = "Automated backup retention (point-in-time restore window)."
+  type        = number
+  default     = 7
+}
+
+variable "db_deletion_protection" {
+  description = "Block deleting the database (and take a final snapshot). false only for throwaway staging."
+  type        = bool
+  default     = true
+}
+
+variable "history_max_retention_days" {
+  description = "Longest plan retention (yearly plan: 90). The bucket lifecycle removes history a week after."
+  type        = number
+  default     = 90
+}
+
+# --- Email ---
+
+variable "smtp_host" {
+  description = "SMTP host for account emails. Empty: emails are only logged."
+  type        = string
+  default     = ""
+}
+
+variable "smtp_username" {
+  description = "SMTP user name (the password goes into the created Secrets Manager secret)."
+  type        = string
+  default     = ""
+}
+
+variable "mail_from_address" {
+  description = "From address of account emails."
+  type        = string
+  default     = ""
+}
