@@ -18,6 +18,7 @@ export function CandidateTable({
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Set<string>>(() => new Set());
 
   async function action(work: () => Promise<void>) {
     setError(null);
@@ -32,7 +33,9 @@ export function CandidateTable({
   }
 
   async function load() {
-    const filters: Record<string, string> = {};
+    // Only open suggestions are listed: accepted ones live on as rules
+    // (Generate tab) and rejected ones are dismissed.
+    const filters: Record<string, string> = { state: "suggested" };
     if (confidence) filters.confidence = confidence;
     const r = await api.listCandidates(analysisId, filters);
     setCandidates(r.items);
@@ -42,27 +45,55 @@ export function CandidateTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisId, confidence]);
 
+  /** Remove the row immediately; put it back where it was if the call fails. */
+  async function resolve(c: Candidate, call: () => Promise<unknown>, done: string) {
+    const index = candidates.findIndex((x) => x.id === c.id);
+    setPending((prev) => new Set(prev).add(c.id));
+    setCandidates((prev) => prev.filter((x) => x.id !== c.id));
+    if (expanded === c.id) setExpanded(null);
+    try {
+      await call();
+      setMsg(done);
+    } catch (e) {
+      setCandidates((prev) => {
+        if (prev.some((x) => x.id === c.id)) return prev;
+        const next = [...prev];
+        next.splice(Math.min(Math.max(index, 0), next.length), 0, c);
+        return next;
+      });
+      throw e;
+    } finally {
+      setPending((prev) => {
+        const next = new Set(prev);
+        next.delete(c.id);
+        return next;
+      });
+    }
+  }
+
   async function accept(c: Candidate) {
-    await api.acceptCandidate(analysisId, c.id);
-    setMsg(`Accepted ${c.variable_name}`);
+    await resolve(c, () => api.acceptCandidate(analysisId, c.id), `Accepted \${${c.variable_name}} as a correlation rule`);
     await onRulesChanged();
-    await load();
   }
   async function reject(c: Candidate) {
-    await api.rejectCandidate(analysisId, c.id);
-    await load();
+    await resolve(c, () => api.rejectCandidate(analysisId, c.id), `Rejected \${${c.variable_name}}`);
   }
   async function acceptHigh() {
     const r = await api.acceptHigh(analysisId);
-    setMsg(`Accepted ${r.accepted} high-confidence rules`);
+    setMsg(`Accepted ${r.accepted} high-confidence rule${r.accepted === 1 ? "" : "s"}`);
     await onRulesChanged();
     await load();
   }
 
+  const highCount = candidates.filter((c) => c.confidence === "high").length;
+
   return (
     <div className="card p-3">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h3 className="mr-auto text-sm font-semibold">Correlation candidates</h3>
+        <h3 className="mr-auto text-sm font-semibold">
+          Correlation candidates
+          {candidates.length > 0 && <span className="ml-1.5 font-normal text-fg-muted">({candidates.length} open)</span>}
+        </h3>
         <select
           value={confidence}
           onChange={(e) => setConfidence(e.target.value)}
@@ -73,13 +104,24 @@ export function CandidateTable({
           <option value="medium">medium</option>
           <option value="low">low</option>
         </select>
-        <button className="btn-ghost text-xs" disabled={busy} onClick={() => void action(acceptHigh)}>
-          Accept all high
+        <button
+          className="btn-ghost text-xs"
+          disabled={busy || highCount === 0}
+          title={highCount === 0 ? "No high-confidence candidates left" : undefined}
+          onClick={() => void action(acceptHigh)}
+        >
+          Accept all high{highCount > 0 ? ` (${highCount})` : ""}
         </button>
       </div>
-      {msg && <p className="mb-2 rounded-[10px] bg-ok-soft px-3 py-1.5 text-xs text-ok">{msg}</p>}
+      {msg && <p role="status" aria-live="polite" className="mb-2 rounded-[10px] bg-ok-soft px-3 py-1.5 text-xs text-ok">{msg}</p>}
       {error && <p role="alert" className="mb-2 rounded-[10px] bg-danger-soft px-3 py-1.5 text-xs text-danger">{error}</p>}
-      {candidates.length === 0 && <p className="text-sm text-fg-subtle">No candidates.</p>}
+      {candidates.length === 0 && !busy && (
+        <p className="text-sm text-fg-subtle">
+          {confidence
+            ? `No open ${confidence}-confidence candidates.`
+            : "No open candidates. Accepted ones are listed as rules in the Generate tab."}
+        </p>
+      )}
       <div className="space-y-2">
         {candidates.map((c) => (
           <div key={c.id} className="rounded-[10px] border border-line bg-surface2">
@@ -90,13 +132,17 @@ export function CandidateTable({
                 {c.producer.location_type}:{c.producer.canonical_path} → {c.consumer_count} consumer(s)
               </span>
               <span className="ml-auto flex gap-2">
-                <button className="btn-ghost text-xs" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
+                <button
+                  className="btn-ghost text-xs"
+                  aria-expanded={expanded === c.id}
+                  onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                >
                   {expanded === c.id ? "Hide" : "Evidence"}
                 </button>
-                <button className="btn-ghost text-xs" disabled={busy} onClick={() => void action(() => reject(c))}>
+                <button className="btn-ghost text-xs" disabled={pending.has(c.id)} onClick={() => void action(() => reject(c))}>
                   Reject
                 </button>
-                <button className="btn text-xs" disabled={busy} onClick={() => void action(() => accept(c))}>
+                <button className="btn text-xs" disabled={pending.has(c.id)} onClick={() => void action(() => accept(c))}>
                   Accept
                 </button>
               </span>
