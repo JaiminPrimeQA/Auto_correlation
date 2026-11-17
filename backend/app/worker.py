@@ -9,15 +9,24 @@ For each message: load the job and its encrypted material, drive the job
 through the existing state machine with the Fargate task runner, store both
 reports for the API, then delete the message and the material.
 
-A redelivered message whose job was already started means a previous worker
-died mid-run: that job is failed (`worker_lost`), never resumed half-way,
-because run B must start from exactly the same inputs as run A.
+While a job runs, a heartbeat extends the message's visibility and stamps
+the job, and the task asks ECS for scale-in protection, so deployments and
+autoscaling do not stop it. SIGTERM lets the current job finish (continuous
+mode) before the process exits.
+
+A redelivered message whose job was already started, and whose heartbeat has
+stopped, means a previous worker died mid-run: that job is failed
+(`worker_lost`), never resumed half-way, because run B must start from
+exactly the same inputs as run A. Collections can change real systems, so
+nothing is replayed automatically.
 """
 
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
+import threading
 import time
 
 from .core import metrics
@@ -29,6 +38,7 @@ from .repositories.execution_job_store import ExecutionJobStore
 from .repositories.s3_object_store import S3ObjectStore, job_prefix, material_key, report_key
 from .services import execution_job_service
 from .services.job_launcher import RunMaterial
+from .services.job_liveness import Heartbeat, TaskProtection
 from .services.job_queue import QueueMessage, SqsJobQueue
 
 log = get_logger("worker")
@@ -46,6 +56,7 @@ class Worker:
         objects: S3ObjectStore,
         runner: NewmanRunner,
         receive_wait_seconds: int = 20,
+        protection: TaskProtection | None = None,
     ) -> None:
         self._settings = settings
         self._queue = queue
@@ -53,6 +64,10 @@ class Worker:
         self._objects = objects
         self._runner = runner
         self._wait = receive_wait_seconds
+        self._protection = protection or TaskProtection(
+            expires_in_minutes=max(1, settings.job_visibility_timeout_seconds // 60 * 2),
+        )
+        self.stopping = threading.Event()
 
     def process_one(self) -> bool:
         """Handle at most one message; False when the queue was empty."""
@@ -62,7 +77,8 @@ class Worker:
         if not messages:
             return False
         for message in messages:
-            self._handle(message)
+            with self._protection:
+                self._handle(message)
         return True
 
     def _discard(self, message: QueueMessage) -> None:
@@ -76,6 +92,12 @@ class Worker:
             self._discard(message)  # deleted or expired while queued
             return
         if job.state != ExecutionJobState.QUEUED:
+            beat = job.heartbeat_at or 0.0
+            if job.is_active and not job.reports_ready and time.time() - beat < self._settings.job_heartbeat_timeout_seconds:
+                # Its worker is still alive (a visibility extension was missed):
+                # hand the message back for later instead of failing the job.
+                self._queue.extend(message, self._settings.job_heartbeat_timeout_seconds)
+                return
             if job.is_active and not job.reports_ready:
                 log.warning("job started by a lost worker", extra={"stage": "worker", "job_id": job_id})
                 execution_job_service.fail_job(
@@ -98,19 +120,26 @@ class Worker:
         material = RunMaterial.from_document(document)
         metrics.emit("QueueWaitSeconds", round(max(0.0, time.time() - message.enqueued_at), 3), unit="Seconds")
         log.info("job picked up", extra={"stage": "worker", "job_id": job_id, "count": message.receive_count})
-        execution_job_service.run_job(
-            job_id,
-            collection_data=material.collection_data,
-            environment_data=material.environment_data,
-            variable_values=material.variable_values,
-            supplied_values=material.supplied_values,
-            folder_id=material.folder_id,
-            runner=self._runner,
-            store=self._store,
-            analysis_store=None,
-            settings=self._settings,
-            hand_off_reports=self._hand_off,
+        heartbeat = Heartbeat(
+            job_id=job_id, store=self._store,
+            extend_visibility=lambda seconds: self._queue.extend(message, seconds),
+            interval=self._settings.job_heartbeat_seconds,
+            visibility_timeout=self._settings.job_visibility_timeout_seconds,
         )
+        with heartbeat:
+            execution_job_service.run_job(
+                job_id,
+                collection_data=material.collection_data,
+                environment_data=material.environment_data,
+                variable_values=material.variable_values,
+                supplied_values=material.supplied_values,
+                folder_id=material.folder_id,
+                runner=self._runner,
+                store=self._store,
+                analysis_store=None,
+                settings=self._settings,
+                hand_off_reports=self._hand_off,
+            )
         self._objects.delete(material_key(job_id))
         final = self._store.get(job_id)
         if final is None or not final.reports_ready:
@@ -159,7 +188,8 @@ def build_worker(settings: Settings) -> Worker:
 def run_once(worker: Worker) -> None:
     """Wait (long-polling) until one job arrives, process it, and return. In
     ECS the task then exits, so every job gets a fresh worker task."""
-    while not worker.process_one():
+    stopping = getattr(worker, "stopping", None) or threading.Event()
+    while not stopping.is_set() and not worker.process_one():
         pass
 
 
@@ -171,12 +201,22 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     check_production_settings(settings, role="worker")
     worker = build_worker(settings)
+
+    def _graceful(signum: int, _frame: object) -> None:
+        # ECS sends SIGTERM before stopping a task: finish the job in hand
+        # (task protection keeps deployments from doing this mid-job), take
+        # no new one, then exit.
+        log.info("worker stopping after the current job", extra={"stage": "worker"})
+        worker.stopping.set()
+
+    signal.signal(signal.SIGTERM, _graceful)
     log.info("worker started", extra={"stage": "worker"})
     if args.once:
         run_once(worker)
         return 0
-    while True:
+    while not worker.stopping.is_set():
         worker.process_one()
+    return 0
 
 
 if __name__ == "__main__":

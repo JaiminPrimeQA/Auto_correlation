@@ -58,6 +58,12 @@ class SqsJobQueue:
             messages.append(QueueMessage(job_id, raw["ReceiptHandle"], count, enqueued_at))
         return messages
 
+    def extend(self, message: QueueMessage, visibility_timeout: int) -> None:
+        """Keep the message hidden from other workers for another period."""
+        self._sqs.change_message_visibility(
+            QueueUrl=self._url, ReceiptHandle=message.receipt_handle, VisibilityTimeout=visibility_timeout,
+        )
+
     def delete(self, message: QueueMessage) -> None:
         self._sqs.delete_message(QueueUrl=self._url, ReceiptHandle=message.receipt_handle)
 

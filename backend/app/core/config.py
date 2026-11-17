@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     presign_grace_seconds: int = 300
     # SQS visibility for one job: two runs plus task start-up and analysis.
     job_visibility_timeout_seconds: int = 20 * 60
+    # While a worker holds a job it extends the message visibility and stamps
+    # the job every `job_heartbeat_seconds`; after `job_heartbeat_timeout_seconds`
+    # without a stamp the API reports the job failed (worker_lost).
+    job_heartbeat_seconds: int = 30
+    job_heartbeat_timeout_seconds: int = 180
+    # A job still queued after this long (no worker capacity) is failed.
+    job_queue_timeout_seconds: int = 15 * 60
     # --- Docker Newman runner (Phase 3) ---
     # Built from docker/newman/Dockerfile: node:22-alpine + newman@6.2.2, non-root.
     newman_docker_image: str = "baseline11/newman:6.2.2"

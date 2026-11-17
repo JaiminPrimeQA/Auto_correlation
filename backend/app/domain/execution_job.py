@@ -111,6 +111,9 @@ class ExecutionJob:
     # (the API holds analyses in memory), and when the API claimed that step.
     reports_ready: bool = False
     finalizing_since: float | None = None
+    # Last sign of life from the worker driving this job (AWS backend). The
+    # API fails a running job whose heartbeat is older than the timeout.
+    heartbeat_at: float | None = None
 
     @property
     def is_active(self) -> bool:

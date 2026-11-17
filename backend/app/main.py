@@ -29,16 +29,20 @@ log = get_logger("app")
 
 def dependency_checks(settings: Settings) -> dict[str, bool]:
     """Reachability of what the API needs; nothing to check locally."""
-    if settings.job_backend != "aws":
-        return {}
     from .api import deps
 
     checks: dict[str, bool] = {}
-    probes = {
-        "job_store": lambda: deps.get_job_store().get("readiness-probe"),
-        "queue": lambda: deps.get_job_queue().ping(),
-        "bucket": lambda: deps.get_object_store().get_bytes("readiness-probe", max_bytes=1),
-    }
+    probes = {}
+    if settings.database_url:
+        probes["database"] = lambda: deps.get_account_store().ping()
+    if settings.session_store != "memory":
+        probes["analysis_store"] = lambda: deps.get_store().get("readiness-probe")
+    if settings.job_backend == "aws":
+        probes.update({
+            "job_store": lambda: deps.get_job_store().get("readiness-probe"),
+            "queue": lambda: deps.get_job_queue().ping(),
+            "bucket": lambda: deps.get_object_store().get_bytes("readiness-probe", max_bytes=1),
+        })
     for name, probe in probes.items():
         try:
             probe()

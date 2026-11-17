@@ -27,6 +27,7 @@ from ...schemas import presenters
 from ...services import billing, execution_job_service
 from ...services.billing import DAY, Entitlement
 from ...services.job_finalizer import finalize_job, needs_finalizing
+from ...services.job_liveness import reconcile_stale
 from ...services.job_launcher import JobLauncher, RunMaterial
 from ...services.postman_inspector import inspect_collection
 from ..deps import (
@@ -237,6 +238,10 @@ async def get_execution_job(
     user: User | None = Depends(get_current_user),
     accounts: AccountStore = Depends(get_account_store),
 ) -> dict:
+    # AWS backend: a job whose worker stopped heartbeating (or that no worker
+    # picked up) ends FAILED with a clear reason instead of spinning forever.
+    if settings.job_backend == "aws" and reconcile_stale(job, job_store, settings, now=time.time()):
+        job = job_store.get(job.id) or job
     # AWS backend: the worker left both reports in S3; the owner's first poll
     # builds the analysis here, where analyses live.
     if needs_finalizing(job):
