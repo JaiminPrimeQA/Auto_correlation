@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { api, ApiError, type AnalysisSummary, type CollectionInspection } from "@/lib/api";
 import { suppliedValuesFor, variablesToAsk } from "@/lib/executionJob";
@@ -33,7 +33,11 @@ export function CollectionWizard({
 }) {
   const [step, setStepState] = useState<Step>("files");
   const [direction, setDirection] = useState<1 | -1>(1);
-  const reduce = useReducedMotion();
+  // useReducedMotion() is null on the server; apply it only after mount so hydration matches.
+  const prefersReduced = useReducedMotion();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const reduce = mounted && prefersReduced;
   const [files, setFiles] = useState<CollectionFiles | null>(null);
   const [inspection, setInspection] = useState<CollectionInspection | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});

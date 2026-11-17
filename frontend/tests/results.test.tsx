@@ -17,6 +17,7 @@ describe("ResultsHeader", () => {
     render(<ResultsHeader summary={summary} />);
     expect(screen.getByRole("heading", { name: "Booking Flow" })).toBeInTheDocument();
     expect(screen.getByText(/ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/5 recorded requests · 0 correlation rules/)).toBeInTheDocument();
     for (const label of ["Correlations", "Parameters", "Credentials", "Cookies", "Noise", "Needs review"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
@@ -24,12 +25,12 @@ describe("ResultsHeader", () => {
 
   it("reassures when there are no confirmed correlations", () => {
     render(<ResultsHeader summary={makeSummary({ ...summary, summary: { ...summary.summary, correlations: 0 } })} />);
-    expect(screen.getByText(/nothing was fabricated/i)).toBeInTheDocument();
+    expect(screen.getByText(/No confirmed correlations yet/)).toBeInTheDocument();
   });
 
   it("does not show the reassurance note when correlations were found", () => {
     render(<ResultsHeader summary={summary} />);
-    expect(screen.queryByText(/nothing was fabricated/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No confirmed correlations yet/)).not.toBeInTheDocument();
   });
 });
 

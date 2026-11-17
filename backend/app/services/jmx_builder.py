@@ -24,7 +24,7 @@ from ..domain.models import (
     Pair,
     ValueOccurrence,
 )
-from ..utils.masking import is_secret_field_name, is_sensitive_key
+from ..utils.masking import is_credential_field, is_login_path, is_sensitive_key
 from ..utils.naming import sanitize_variable_name
 from ..utils.xml import to_string
 from .header_policy import NON_REPLAYED_HEADERS
@@ -80,6 +80,21 @@ def _client_cookies(request: NormalizedRequest, server_cookies: set[str]) -> lis
     return [c for c in request.cookies if c.name not in server_cookies]
 
 
+_SUCCESS_FLAG = re.compile(r"success|succeeded", re.I)
+
+
+def _success_flags(execution: NormalizedExecution) -> list[str]:
+    """JSONPaths of the flags that said this call worked when it was recorded."""
+    body = execution.response.parsed_body if execution.response is not None else None
+    if not isinstance(body, dict):
+        return []
+    nodes = [("$", body)]
+    if isinstance(body.get("data"), dict):
+        nodes.append(("$.data", body["data"]))
+    return [f"{prefix}.{key}" for prefix, node in nodes for key, value in node.items()
+            if value is True and key.isidentifier() and _SUCCESS_FLAG.search(key)]
+
+
 @dataclass
 class BuildOptions:
     num_threads: int = 1
@@ -89,6 +104,9 @@ class BuildOptions:
     include_static_secrets: bool = False  # opt-in to embed real secret values
     externalize_secrets: bool = True
     keep_user_agent: bool = False  # User-Agent is runtime noise unless kept on purpose
+    # A recorded visit: each iteration is a new visitor, an HTTP 200 can hide a
+    # failed login, and the plan is usually opened straight away in the GUI.
+    browser_recording: bool = False
     # JSON Extractors create these variables when their producer sampler runs.
     # Predeclaring them as __NOT_FOUND__ in UDV makes a healthy generated plan
     # look broken in JMeter before execution and is unnecessary.
@@ -230,6 +248,7 @@ class JmxBuilder:
         # Samplers (in sequence order).
         sampler_elements: list[tuple[NormalizedExecution, ET.Element, ET.Element]] = []
         server_cookies: set[str] = set()  # names set via Set-Cookie so far: the Cookie Manager replays them
+        guarded: set[str] = set()  # required properties checked before their first use
         for execution in sequence_run.executions:
             sub = consumers.get(execution.id, [])
             mutated, replaced, props, materialized = self._mutate_request(execution, sub, server_cookies)
@@ -264,6 +283,12 @@ class JmxBuilder:
                 result.extractor_counts[rule.extractor_method.value] = (
                     result.extractor_counts.get(rule.extractor_method.value, 0) + 1
                 )
+            if self.options.browser_recording:
+                self._business_checks(child_tree, execution, mutated.method)
+                for prop in props:
+                    if prop not in guarded:
+                        guarded.add(prop)
+                        self._require_property(child_tree, prop)
             sampler_elements.append((execution, sampler, child_tree))
 
         # A failed/skipped producer must never silently reuse captured values.
@@ -276,8 +301,13 @@ class JmxBuilder:
                     udv_entries.append((r.variable_name, r.default_value, desc))
 
         # Insert UDV block right after managers (before samplers) by rebuilding order.
+        for prop in sorted(guarded):
+            self._use_plan_variable(tg_tree, prop)
+            udv_entries.append((prop, f"${{__P({prop},)}}", f"Type it here or start JMeter with -J{prop}=<value>"))
         if udv_entries:
             self._insert_udv(tg_tree, udv_entries)
+        if self.options.browser_recording:
+            self._listeners(plan_tree)
 
         result.xml = to_string(root)
         return result
@@ -327,7 +357,7 @@ class JmxBuilder:
             "testname": "HTTP Cookie Manager", "enabled": "true",
         })
         _collection(cm, "CookieManager.cookies")
-        _bp(cm, "CookieManager.clearEachIteration", False)
+        _bp(cm, "CookieManager.clearEachIteration", self.options.browser_recording)
         _bp(cm, "CookieManager.controlledByThreadGroup", False)
 
     def _cache_manager(self, parent: ET.Element) -> None:
@@ -338,6 +368,63 @@ class JmxBuilder:
         _bp(cm, "clearEachIteration", True)
         _bp(cm, "useExpires", True)
         _bp(cm, "CacheManager.controlledByThread", False)
+
+    def _listeners(self, plan_tree: ET.Element) -> None:
+        """Without a listener the JMeter GUI shows nothing after a run."""
+        for gui, name in (("ViewResultsFullVisualizer", "View Results Tree"), ("SummaryReport", "Summary Report")):
+            e = ET.SubElement(plan_tree, "ResultCollector", {
+                "guiclass": gui, "testclass": "ResultCollector", "testname": name, "enabled": "true",
+            })
+            _bp(e, "ResultCollector.error_logging", False)
+            _sp(e, "filename", "")
+            ET.SubElement(plan_tree, "hashTree")
+
+    def _groovy_element(self, parent: ET.Element, tag: str, gui: str, name: str, script: str) -> None:
+        e = ET.SubElement(parent, tag, {"guiclass": gui, "testclass": tag, "testname": name, "enabled": "true"})
+        _sp(e, "scriptLanguage", "groovy")
+        _sp(e, "parameters", "")
+        _sp(e, "filename", "")
+        _sp(e, "cacheKey", "true")
+        _sp(e, "script", script)
+        ET.SubElement(parent, "hashTree")
+
+    def _use_plan_variable(self, tree: ET.Element, prop: str) -> None:
+        """The JMeter window can't set a property, but it can edit a variable."""
+        for element in tree.iter("stringProp"):
+            if element.text:
+                element.text = element.text.replace(f"${{__P({prop},)}}", f"${{{prop}}}")
+
+    def _require_property(self, parent: ET.Element, prop: str) -> None:
+        """An empty password would burn a login attempt: stop before sending it."""
+        quoted = _groovy_str(prop)
+        self._groovy_element(parent, "JSR223PreProcessor", "TestBeanGUI", f"Require {prop}", (
+            f"if (!vars.get({quoted})) {{\n"
+            f"  def message = 'Missing ' + {quoted} + ': set it in User Defined Variables or start JMeter with -J' + {quoted} + '=<value>'\n"
+            "  log.error(message)\n"
+            "  println(message)\n"
+            "  ctx.getThread().stop()\n"
+            "}\n"
+        ))
+
+    def _business_checks(self, parent: ET.Element, execution: NormalizedExecution, method: str) -> None:
+        """HTTP 200 is not success here: {"isLoginSuccessful": false} is a 200 too."""
+        for path in _success_flags(execution):
+            e = ET.SubElement(parent, "JSONPathAssertion", {
+                "guiclass": "JSONPathAssertionGui", "testclass": "JSONPathAssertion",
+                "testname": f"Check {path}", "enabled": "true",
+            })
+            _sp(e, "JSON_PATH", path)
+            _sp(e, "EXPECTED_VALUE", "true")
+            _bp(e, "JSONVALIDATION", True)
+            _bp(e, "EXPECT_NULL", False)
+            _bp(e, "INVERT", False)
+            _bp(e, "ISREGEX", False)
+            ET.SubElement(parent, "hashTree")
+        if method == "POST" and is_login_path(execution.request.path):
+            # Assertions run after post-processors, so this has to be an assertion
+            # to see the checks above. Retrying a bad login can lock the account.
+            self._groovy_element(parent, "JSR223Assertion", "TestBeanGUI", "Stop this user if login failed",
+                                 "if (!prev.isSuccessful()) { prev.setStopThread(true) }\n")
 
     def _insert_udv(self, tg_tree: ET.Element, entries: list[tuple[str, str, str]]) -> None:
         args = ET.Element("Arguments", {
@@ -389,7 +476,7 @@ class JmxBuilder:
         else:
             # GET/DELETE query parameters become sampler arguments.
             for q in req.query:
-                self._http_argument(coll, q.name, q.value, encode=False)
+                self._http_argument(coll, q.name, q.value, encode=self.options.browser_recording)
 
         use_var_host = self.options.parameterize_host and req.host == primary_host and primary_host
         _sp(sampler, "HTTPSampler.domain", "${BASE_HOST}" if use_var_host else req.host)
@@ -514,6 +601,8 @@ class JmxBuilder:
             "guiclass": "RegexExtractorGui", "testclass": "RegexExtractor",
             "testname": f"Extract {rule.variable_name}", "enabled": "true",
         })
+        if rule.extractor_expression.startswith("[?&]"):
+            _sp(e, "Sample.scope", "all")  # a redirect's Location is on a sub-sample
         _sp(e, "RegexExtractor.useHeaders", "true" if use_headers else "false")
         _sp(e, "RegexExtractor.refname", rule.variable_name)
         _sp(e, "RegexExtractor.regex", rule.extractor_expression)
@@ -635,7 +724,7 @@ class JmxBuilder:
             for path, value in flatten_json(req.parsed_body):
                 field = _leaf_key(path)
                 if (isinstance(value, str) and value and "${" not in value
-                        and path not in sub_paths and is_secret_field_name(field)):
+                        and path not in sub_paths and is_credential_field(field, req.path)):
                     prop = sanitize_variable_name(field or "")
                     body_secrets.append((path, prop))
                     property_names.append(prop)
@@ -656,7 +745,7 @@ class JmxBuilder:
         # manual review (see classification.py), not auto-externalised.
         if self._externalize_secrets():
             for f in req.form_data:
-                if f.value and "${" not in f.value and is_secret_field_name(f.name):
+                if f.value and "${" not in f.value and is_credential_field(f.name, req.path):
                     prop = sanitize_variable_name(f.name)
                     f.value = f"${{__P({prop},)}}"
                     property_names.append(prop)
@@ -665,7 +754,7 @@ class JmxBuilder:
                     continue  # dropped by the header manager anyway
                 if "${" in h.value:
                     continue  # already carries a correlated variable reference
-                if is_sensitive_key(h.name):
+                if h.value and is_sensitive_key(h.name):  # an empty header has nothing to supply
                     prop = sanitize_variable_name(h.name)
                     h.value = f"${{__P({prop},)}}"
                     property_names.append(prop)

@@ -14,11 +14,12 @@ export interface CollectionFiles {
   environment: File | null;
 }
 
-function DropZone({
-  id, label, optional, emptyTitle, emptyHint, file, onPick,
+export function DropZone({
+  id, label, optional, emptyTitle, emptyHint, accept, file, onPick, disabled = false,
 }: {
-  id: string; label: string; optional?: boolean; emptyTitle: string; emptyHint: string;
+  id: string; label: string; optional?: boolean; emptyTitle: string; emptyHint: string; accept?: string;
   file: File | null; onPick: (file: File | null) => void;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -31,7 +32,7 @@ function DropZone({
         onDrop={(event) => {
           event.preventDefault();
           const dropped = event.dataTransfer.files[0];
-          if (dropped) onPick(dropped);
+          if (dropped && !disabled) onPick(dropped);
         }}
         className={`focus-within:ring-accent/30 flex cursor-pointer items-center gap-3.5 rounded-[10px] border-[1.5px] p-4 transition-colors duration-150 focus-within:ring-[3px] ${
           file ? "border-solid border-accent/40 bg-accent-soft/40" : "border-dashed border-line-strong bg-surface2 hover:border-accent"
@@ -54,7 +55,8 @@ function DropZone({
           id={id}
           aria-label={label}
           type="file"
-          accept="application/json,.json"
+          disabled={disabled}
+          accept={accept}
           className="sr-only"
           onChange={(e) => onPick(e.target.files?.[0] ?? null)}
         />
@@ -62,6 +64,8 @@ function DropZone({
     </div>
   );
 }
+
+const JSON_FILES = "application/json,.json";
 
 const HOW = [
   ["Upload and check", "We read the collection and list any values we still need."],
@@ -71,7 +75,7 @@ const HOW = [
 
 /** Step 1: choose files and inspect them - nothing is executed here. */
 /** What the visitor's plan allows, under the upload areas. */
-function PlanAllowance({ me }: { me: Me }) {
+export function PlanAllowance({ me }: { me: Me }) {
   if (me.plan) {
     return (
       <p className="text-[12.5px] text-fg-muted">
@@ -96,7 +100,7 @@ function PlanAllowance({ me }: { me: Me }) {
 
 /** Shown in place of the upload areas until the visitor signs in, so every
  * analysis - free or paid - is counted against an account. */
-function SignInPrompt({ me }: { me: Me }) {
+export function SignInPrompt({ me }: { me: Me }) {
   const next = encodeURIComponent("/");
   return (
     <div className="card rise space-y-4 p-6">
@@ -164,11 +168,12 @@ export function FilesStep({
 
   return (
     <>
-    <div className="grid items-start gap-10 lg:grid-cols-[1fr_1.05fr]">
+    <div className="grid items-start gap-10 lg:grid-cols-[0.9fr_1.1fr]">
       <div className="rise">
-        <h1 style={{ "--i": 0 } as React.CSSProperties} className="mb-3 max-w-[16ch] text-[32px] font-semibold leading-[1.12] tracking-[-0.03em]">
-          Turn a Postman collection into a correlated JMeter plan
-        </h1>
+        <p className="eyebrow mb-3">From collection to correlation</p>
+        <h2 style={{ "--i": 0 } as React.CSSProperties} className="mb-4 max-w-[18ch] text-[30px] font-semibold leading-[1.15] tracking-[-0.035em]">
+          Two runs. One connected test plan.
+        </h2>
         <p style={{ "--i": 1 } as React.CSSProperties} className="mb-6 max-w-[44ch] text-[15px] leading-relaxed text-fg-muted">
           Upload your collection. We run it twice in an isolated sandbox, find the values that change between runs,
           and wire them into a test plan you can review, supply credentials for, and validate.
@@ -184,13 +189,14 @@ export function FilesStep({
       </div>
 
       {me?.sign_in_required ? <SignInPrompt me={me} /> : (
-      <div className="card rise space-y-3 p-5">
+      <div className="upload-panel rise space-y-5">
+        <div className="border-b border-line pb-4"><h3 className="font-semibold">Add your collection</h3><p className="mt-1 text-xs text-fg-muted">Postman collection with an optional environment</p></div>
         <div style={{ "--i": 1 } as React.CSSProperties}>
-          <DropZone id="collection-file" label="Collection file" emptyTitle="Choose or drop a collection"
+          <DropZone id="collection-file" label="Collection file" accept={JSON_FILES} emptyTitle="Choose or drop a collection"
             emptyHint={`Postman v2.0 or v2.1 JSON, up to ${me?.limits.max_file_mb ?? 2} MB`} file={collection} onPick={setCollection} />
         </div>
         <div style={{ "--i": 2 } as React.CSSProperties}>
-          <DropZone id="environment-file" label="Environment file" optional emptyTitle="Choose or drop an environment"
+          <DropZone id="environment-file" label="Environment file" optional accept={JSON_FILES} emptyTitle="Choose or drop an environment"
             emptyHint={`Values such as baseUrl and password, up to ${me?.limits.max_file_mb ?? 2} MB`} file={environment} onPick={setEnvironment} />
         </div>
         {me && <PlanAllowance me={me} />}

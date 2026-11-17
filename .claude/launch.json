@@ -2,11 +2,21 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "backend",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"],
+      "port": 8001,
+      "autoPort": false,
+      "cwd": "backend",
+      "env": { "B11_NEWMAN_RUNNER": "docker" }
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000,
-      "cwd": "frontend"
+      "cwd": "frontend",
+      "env": { "BACKEND_URL": "http://127.0.0.1:8001" }
     }
   ]
 }

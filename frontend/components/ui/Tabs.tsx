@@ -20,7 +20,7 @@ export function Tabs<T extends string>({
   }, [active, tabs]);
 
   return (
-    <div role="tablist" className="relative flex gap-0.5 overflow-x-auto border-b border-line">
+    <div role="tablist" className="relative flex gap-0.5 overflow-x-auto overflow-y-hidden border-b border-line">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -38,7 +38,7 @@ export function Tabs<T extends string>({
       ))}
       <span
         aria-hidden
-        className="absolute -bottom-px left-0 h-0.5 rounded bg-accent"
+        className="absolute bottom-0 left-0 h-0.5 rounded bg-accent"
         style={{
           width: bar.width,
           transform: `translateX(${bar.left}px)`,

@@ -41,5 +41,9 @@ export function makeJob(overrides: Partial<ExecutionJob> = {}): ExecutionJob {
 }
 
 export function makeSummary(overrides: Partial<AnalysisSummary> = {}): AnalysisSummary {
-  return { analysis_id: "an_1", collection_name: "Checkout flow", mode: "two_run", ...overrides } as AnalysisSummary;
+  return { analysis_id: "an_1", collection_name: "Checkout flow", mode: "two_run",
+    baseline_health: { total_executions: 5, status_distribution: { "200": 5 }, missing_responses: 0,
+      network_errors: 0, timeouts: 0, auth_failure_ratio: 0, server_error_ratio: 0, newman_failures: 0,
+      assertion_failures: 0, business_signals: [], empty_datasets: 0, level: "ok", blockers: [], warnings: [] },
+    ...overrides } as AnalysisSummary;
 }

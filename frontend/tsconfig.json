@@ -31,9 +31,12 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-audit/types/**/*.ts",
+    ".next-ui-browser/types/**/*.ts",
+    ".next-ui-check/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-audit/types/**/*.ts"
+    ".next-release-ui-final/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

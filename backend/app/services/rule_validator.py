@@ -11,6 +11,7 @@ from .jsonpath_support import jsonpath_values, scalar_text
 from .value_indexer import (
     index_request_sinks,
     index_response_sources,
+    repeats_one_field,
 )
 
 
@@ -138,7 +139,7 @@ def validate_rule(
             "value_not_in_response",
             "The selected value was not found in any response.",
         ))
-    elif len({(s.location_type, s.canonical_path) for s in matching}) > 1:
+    elif len({(s.location_type, s.canonical_path) for s in matching}) > 1 and not repeats_one_field(matching):
         issues.append(ValidationIssue(
             "ambiguous_producers",
             _ambiguous_detail(

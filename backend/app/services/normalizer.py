@@ -138,7 +138,7 @@ def _try_json(text: str | None) -> object | None:
         return None
     try:
         return json.loads(text)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return None
 
 

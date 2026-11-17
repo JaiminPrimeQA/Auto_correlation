@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
+
+from ..domain.enums import Side
 from ..domain.execution_job import ExecutionJob
 from ..domain.models import (
     AlignmentReport,
     CorrelationCandidate,
     CorrelationRule,
     NormalizedExecution,
+    NormalizedRequest,
     Pair,
     RunHealth,
     ValueInsight,
@@ -15,7 +19,15 @@ from ..domain.models import (
 )
 from ..domain.postman_models import CollectionInspection, PostmanFolder, PostmanVariable, UnsupportedFeature
 from ..repositories.analysis_store import Analysis
-from ..utils.masking import mask_if_sensitive
+from ..services.har_import import Decision, HarRecording
+from ..utils.masking import is_credential_field, is_credential_name, mask_if_sensitive, mask_value
+
+
+def _occurrence_value(occ: ValueOccurrence) -> str:
+    field = occ.key or occ.canonical_path.rsplit(".", 1)[-1]
+    if occ.side == Side.REQUEST and is_credential_name(field):
+        return mask_value(occ.raw_value)
+    return mask_if_sensitive(occ.key, occ.raw_value)
 
 
 def occurrence_dto(occ: ValueOccurrence) -> dict:
@@ -26,7 +38,7 @@ def occurrence_dto(occ: ValueOccurrence) -> dict:
         "location_type": occ.location_type.value,
         "canonical_path": occ.canonical_path,
         "key": occ.key,
-        "value_masked": mask_if_sensitive(occ.key, occ.raw_value),
+        "value_masked": _occurrence_value(occ),
         "data_type": occ.data_type.value,
         "wrapper": occ.wrapper,
     }
@@ -103,6 +115,28 @@ def _pairs_dto(pairs: list[Pair], *, mask: bool) -> list[dict]:
     ]
 
 
+def _mask_credentials(node: object, path: str) -> object:
+    if isinstance(node, dict):
+        return {k: mask_value(v) if isinstance(v, str) and is_credential_field(k, path) else _mask_credentials(v, path)
+                for k, v in node.items()}
+    if isinstance(node, list):
+        return [_mask_credentials(v, path) for v in node]
+    return node
+
+
+def _display_body(req: NormalizedRequest) -> str | None:
+    masked = _mask_credentials(req.parsed_body, req.path)
+    return req.raw_body if masked == req.parsed_body else json.dumps(masked)
+
+
+def _display_form(req: NormalizedRequest) -> list[dict]:
+    return [
+        {"name": p.name, "value": mask_value(p.value) if is_credential_field(p.name, req.path)
+         else mask_if_sensitive(p.name, p.value)}
+        for p in req.form_data
+    ]
+
+
 def execution_summary(e: NormalizedExecution) -> dict:
     return {
         "id": e.id,
@@ -134,8 +168,8 @@ def execution_detail(e: NormalizedExecution) -> dict:
             "headers": _pairs_dto(req.headers, mask=True),
             "cookies": _pairs_dto(req.cookies, mask=True),
             "body_mode": req.body_mode.value,
-            "raw_body": req.raw_body,
-            "form_data": _pairs_dto(req.form_data, mask=True),
+            "raw_body": _display_body(req),
+            "form_data": _display_form(req),
             "content_type": req.content_type,
         },
         "response": None if resp is None else {
@@ -177,6 +211,7 @@ def analysis_summary(analysis: Analysis) -> dict:
         + (analysis.comparison_run.warnings if analysis.comparison_run else []),
         "blocked": _is_blocked(analysis),
         "collection_name": analysis.baseline_run.collection_name,
+        "source": analysis.source,
     }
 
 
@@ -186,6 +221,26 @@ def _is_blocked(analysis: Analysis) -> bool:
     if analysis.baseline_run.health.blockers:
         return True
     return False
+
+
+def har_recording_dto(recording: HarRecording) -> dict:
+    counts = recording.counts()
+    return {
+        "filename": recording.filename,
+        "total": len(recording.reviewed),
+        "kept": counts[Decision.KEEP.value],
+        "optional": counts[Decision.OPTIONAL.value],
+        "removed": counts[Decision.REMOVED.value],
+        "size_bytes": recording.size_bytes,
+        "cleaned_bytes": recording.cleaned_bytes(recording.default_selection()),
+        "removed_by_reason": recording.removed_by_reason(),
+        "warnings": recording.warnings,
+        "entries": [
+            {"index": r.index, "method": r.method, "url": r.url, "status": r.status, "decision": r.decision.value,
+             "reason": r.reason}
+            for r in recording.reviewed if r.decision != Decision.REMOVED
+        ],
+    }
 
 
 def postman_variable_dto(v: PostmanVariable) -> dict:

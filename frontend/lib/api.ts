@@ -102,6 +102,7 @@ export interface Insight {
 
 export interface AnalysisSummary {
   analysis_id: string;
+  source?: "newman" | "har";
   mode: "two_run" | "single_run";
   baseline_health: Health;
   comparison_health: Health | null;
@@ -357,11 +358,46 @@ export function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 }
 
+export interface HarEntry {
+  index: number;
+  method: string;
+  url: string;
+  status: number;
+  decision: "keep" | "optional";
+  reason: string;
+}
+
+export interface HarFileReview {
+  filename: string;
+  total: number;
+  kept: number;
+  optional: number;
+  removed: number;
+  size_bytes: number;
+  cleaned_bytes: number;
+  removed_by_reason: Record<string, number>;
+  warnings: string[];
+  entries: HarEntry[];
+}
+
+function filesForm(files: File[]): FormData {
+  const form = new FormData();
+  files.forEach((f) => form.append("files", f, f.name));
+  return form;
+}
+
 export const api = {
+  inspectHar(files: File[]): Promise<{ files: HarFileReview[] }> {
+    return send("/analyses/har/inspect", { method: "POST", body: filesForm(files) });
+  },
+  /** `selected` holds entry indexes of the first file. */
+  createHarAnalysis(files: File[], selected: number[]): Promise<AnalysisSummary> {
+    const form = filesForm(files);
+    form.append("selected", JSON.stringify(selected));
+    return send<AnalysisSummary>("/analyses/har", { method: "POST", body: form });
+  },
   createAnalysis(files: File[]): Promise<AnalysisSummary> {
-    const form = new FormData();
-    files.forEach((f) => form.append("files", f, f.name));
-    return send<AnalysisSummary>("/analyses", { method: "POST", body: form });
+    return send<AnalysisSummary>("/analyses", { method: "POST", body: filesForm(files) });
   },
   /** Authenticated file download (a bare <a href> cannot carry the token). */
   async download(id: string, kind: "jmx" | "manifest"): Promise<{ blob: Blob; filename: string }> {

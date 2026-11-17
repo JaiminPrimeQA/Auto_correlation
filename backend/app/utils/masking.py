@@ -51,6 +51,27 @@ def is_secret_field_name(name: str | None) -> bool:
     return bool(name) and bool(_SECRET_FIELD.search(name or ""))
 
 
+# Login forms often name the password something plain ("Code", "pin"), so these
+# names only count on a login-like path.
+_LOGIN_PATH = re.compile(r"log-?in|sign-?in", re.I)
+_LOGIN_SECRET_FIELD = re.compile(r"^(code|pin|otp|passcode|pwd|pass)$", re.I)
+
+
+def is_login_path(path: str | None) -> bool:
+    return bool(path and _LOGIN_PATH.search(path))
+
+
+def is_credential_field(name: str | None, path: str | None) -> bool:
+    if is_secret_field_name(name):
+        return True
+    return bool(name and is_login_path(path) and _LOGIN_SECRET_FIELD.match(name))
+
+
+def is_credential_name(name: str | None) -> bool:
+    """For display only, where the request path isn't known: errs towards masking."""
+    return is_secret_field_name(name) or bool(name and _LOGIN_SECRET_FIELD.match(name))
+
+
 def looks_like_secret_value(value: str | None) -> bool:
     if not value:
         return False

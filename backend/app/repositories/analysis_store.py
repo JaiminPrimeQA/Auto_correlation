@@ -51,6 +51,7 @@ class Analysis:
     auto_correlation_result: dict | None = None  # cached response for repeat calls
     # Who may read/modify this analysis (client IP, or `user:{sub}` with OIDC).
     owner_key: str | None = None
+    source: str = "newman"  # newman | har
 
     @property
     def sequence_run(self) -> NormalizedRun:

@@ -209,6 +209,13 @@ The same task deletes history past its retention period.
 
 ---
 
+### Browser recording (HAR) to JMX
+
+1. Open the **Browser recording (HAR)** tab, upload a HAR and click **Clean recording**.
+2. Check that static files are gone and a failed login is unticked with its reason.
+3. Click **Convert to correlated JMX**. The Generate tab opens with the correlations applied.
+4. Click **Generate JMX**, then download it.
+
 ## 6. Automated tests
 
 Run these before pushing changes. All should pass.

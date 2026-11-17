@@ -46,7 +46,7 @@ class GenerateRequest(BaseModel):
     parameterize_host: bool = True
     include_cache_manager: bool = True
     include_static_secrets: bool = False
-    keep_user_agent: bool = False
+    keep_user_agent: bool | None = None  # None: keep it for a browser recording
 
 
 class ValidateRequest(BaseModel):

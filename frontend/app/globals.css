@@ -5,7 +5,7 @@
 /* Calm Light tokens: RGB channels so Tailwind can apply opacity (bg-accent/20). */
 :root {
   color-scheme: light;
-  --bg: 246 247 249;
+  --bg: 245 247 250;
   --surface: 255 255 255;
   --surface-2: 250 251 252;
   --border: 230 232 236;
@@ -24,7 +24,7 @@
   --warn-soft: 255 247 230;
   --danger: 201 48 44;
   --danger-soft: 253 240 239;
-  --shadow-card: 0 1px 2px rgb(20 30 50 / 0.04), 0 8px 24px rgb(20 30 50 / 0.06);
+  --shadow-card: 0 2px 3px rgb(20 30 50 / 0.02), 0 12px 32px -16px rgb(20 30 50 / 0.12);
   --ring: 0 0 0 3px rgb(47 91 234 / 0.25);
 
   --graph-node: 255 255 255;
@@ -104,6 +104,26 @@ body {
 }
 
 @layer components {
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-subtle; }
+  .source-option { @apply flex items-center gap-3 rounded-xl border border-line-strong bg-surface p-4 transition-colors; }
+  .source-option:hover { @apply border-accent/50; }
+  .source-option[aria-selected="true"] { @apply border-accent bg-accent-soft/40; box-shadow: inset 0 0 0 1px rgb(var(--accent)); }
+  .source-icon { @apply grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-surface2 text-fg-muted; }
+  .source-option[aria-selected="true"] .source-icon { @apply bg-accent-soft text-accent-soft-ink; }
+  .source-indicator { @apply grid h-4 w-4 shrink-0 place-items-center rounded-full border border-line-strong; }
+  .source-option[aria-selected="true"] .source-indicator { @apply border-accent bg-accent text-accent-ink; }
+  .upload-panel { @apply rounded-2xl border border-line bg-surface p-5 sm:p-7; box-shadow: var(--shadow-card); }
+  .review-stat { @apply border-l border-line px-4 first:border-l-0 first:pl-0 sm:px-6; }
+  .review-stat strong { @apply block text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl; }
+  .review-stat span { @apply mt-1 block text-xs text-fg-muted; }
+  .request-row { @apply flex cursor-pointer items-start gap-3 border-b border-line px-4 py-3 transition-colors hover:bg-surface2; }
+  .request-row:has(input:checked) { @apply bg-accent-soft/20; }
+  .method-label { @apply mono inline-block min-w-12 rounded border border-line bg-surface px-1.5 py-0.5 text-center text-[10px] font-semibold text-fg-muted; }
+  .journey-diagram { @apply mt-7 overflow-hidden rounded-xl border border-line bg-surface; }
+  .journey-node { @apply flex items-center justify-between gap-3 px-4 py-3 text-xs; }
+  .workspace h1, .workspace h2 { text-wrap: balance; }
+  .workspace input:focus-visible, .workspace select:focus-visible, .workspace summary:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 3px; }
+  .workspace input[type="checkbox"] { accent-color: rgb(var(--accent)); }
   .focus-ring:focus-visible,
   .btn:focus-visible,
   .btn-secondary:focus-visible,

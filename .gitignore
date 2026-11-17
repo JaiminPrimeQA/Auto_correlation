@@ -11,6 +11,8 @@ frontend/node_modules/
 frontend/.next/
 frontend/.next-audit/
 frontend/.next-audit-build/
+frontend/.next-ui-*/
+frontend/.next-release-*/
 frontend/next-env.d.ts
 frontend/tsconfig.tsbuildinfo
 npm-debug.log*
@@ -59,3 +61,9 @@ frontend/playwright-report/
 
 # Accounts database and saved history
 backend/data/
+
+# Outputs derived from real browser recordings (may hold credentials) and release bundles
+reports/download_*
+reports/*.har
+reports/*.zip
+reports/*.sha256

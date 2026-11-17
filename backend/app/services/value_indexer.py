@@ -18,6 +18,10 @@ from ..utils.xml import safe_parse_xml
 # HTML form fields: <input name="csrf" value="TOKEN"> (both attribute orders).
 _HTML_NAME_VALUE = re.compile(r'name="([^"]+)"[^>]*?value="([^"]*)"', re.I)
 _HTML_VALUE_NAME = re.compile(r'value="([^"]*)"[^>]*?name="([^"]+)"', re.I)
+_META_NAME_CONTENT = re.compile(r'<meta[^>]*?name="([^"]+)"[^>]*?content="([^"]*)"', re.I)
+_META_CONTENT_NAME = re.compile(r'<meta[^>]*?content="([^"]*)"[^>]*?name="([^"]+)"', re.I)
+_SCRIPT_BLOCK = re.compile(r"<script\b[^>]*>(.*?)</script>", re.I | re.S)
+_SCRIPT_VALUE = re.compile(r"""["']?([A-Za-z_][\w-]*)["']?\s*[:=]\s*["']([^"'\s<>]{8,})["']""")
 
 
 def _data_type(value: object) -> DataType:
@@ -67,6 +71,18 @@ def _transforms(value: str) -> list[tuple[str, str, str | None]]:
     return out
 
 
+def repeats_one_field(sources: list[ValueOccurrence]) -> bool:
+    """True when every source is the same JSON field repeated by an enclosing
+    object ($.id and $.data.id), so any of them gives the same value. Siblings
+    ($.a.id, $.b.id) and array rows stay ambiguous."""
+    if any(s.location_type != LocationType.JSON_BODY or "[" in s.canonical_path for s in sources):
+        return False
+    splits = sorted((s.canonical_path.rsplit(".", 1) for s in sources), key=lambda pair: len(pair[0]))
+    if len({leaf for _, leaf in splits}) != 1:
+        return False
+    return all(inner.startswith(f"{outer}.") for (outer, _), (inner, _) in zip(splits, splits[1:], strict=False))
+
+
 def index_response_sources(execution: NormalizedExecution) -> list[ValueOccurrence]:
     """Producer candidates from a response (JSON leaves, headers, cookies, XML)."""
     resp = execution.response
@@ -88,6 +104,8 @@ def index_response_sources(execution: NormalizedExecution) -> list[ValueOccurren
                 out.append(_occ(execution, Side.RESPONSE, LocationType.COOKIE, name, name, val))
         else:
             out.append(_occ(execution, Side.RESPONSE, LocationType.HEADER, h.name, h.name, h.value))
+            if h.name.lower() == "location":
+                out.extend(_location_sources(execution, h.value))
 
     # Explicit response cookies
     for c in resp.cookies:
@@ -127,6 +145,35 @@ def _text_sources(execution: NormalizedExecution, text: str) -> list[ValueOccurr
             seen.add((key, value))
             expr = rf'name="{re.escape(key)}"[^>]*?value="([^"]*)"'
             out.append(_occ(execution, Side.RESPONSE, LocationType.TEXT_BODY, expr, key, value))
+
+    # Meta tags and script values. A value already found above stays with that
+    # source: finding it twice would make it look ambiguous.
+    found = {occ.raw_value for occ in out}
+
+    def add(key: str, value: str, expr: str) -> None:
+        if value and value not in found:
+            found.add(value)
+            out.append(_occ(execution, Side.RESPONSE, LocationType.TEXT_BODY, expr, key, value))
+
+    for m in _META_NAME_CONTENT.finditer(text):
+        add(m.group(1), m.group(2), rf'name="{re.escape(m.group(1))}"[^>]*?content="([^"]*)"')
+    for m in _META_CONTENT_NAME.finditer(text):
+        add(m.group(2), m.group(1), rf'content="([^"]*)"[^>]*?name="{re.escape(m.group(2))}"')
+    for script in _SCRIPT_BLOCK.findall(text):
+        for m in _SCRIPT_VALUE.finditer(script):
+            add(m.group(1), m.group(2), rf"""{re.escape(m.group(1))}["']?\s*[:=]\s*["']([^"']+)""")
+    return out
+
+
+def _location_sources(execution: NormalizedExecution, location: str) -> list[ValueOccurrence]:
+    """Query values in a redirect target, such as an OAuth `code`."""
+    query = location.partition("?")[2].partition("#")[0]
+    out = []
+    for chunk in query.split("&"):
+        key, _, value = chunk.partition("=")
+        if key and value:
+            expr = rf"[?&]{re.escape(key)}=([^&#\s]+)"
+            out.append(_occ(execution, Side.RESPONSE, LocationType.HEADER, expr, key, value))
     return out
 
 

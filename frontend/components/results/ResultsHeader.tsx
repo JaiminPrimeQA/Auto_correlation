@@ -15,8 +15,9 @@ export function ResultsHeader({ summary }: { summary: AnalysisSummary }) {
     <section className="rise mb-4">
       <div style={{ "--i": 0 } as React.CSSProperties} className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="mb-1 text-[12.5px] text-fg-subtle">Analysis results</p>
-          <h1 className="text-2xl font-semibold tracking-[-0.02em]">{summary.collection_name || "Analysis"}</h1>
+          <p className="eyebrow mb-2">Analysis results / {summary.source === "har" ? "Browser recording" : "API collection"}</p>
+          <h1 className="break-all text-3xl font-semibold tracking-[-0.035em]">{summary.collection_name || "Analysis"}</h1>
+          <p className="mt-2 text-sm text-fg-muted">{summary.baseline_health.total_executions} recorded requests · {summary.rule_count} correlation rules · {summary.mode === "single_run" ? "Single recording" : "Two-run comparison"}</p>
         </div>
         <ReadinessPill state={summary.readiness.state} />
       </div>
@@ -35,7 +36,7 @@ export function ResultsHeader({ summary }: { summary: AnalysisSummary }) {
       </div>
       {summary.summary.correlations === 0 && (
         <p className="mt-3 rounded-[10px] bg-surface2 px-3 py-2 text-[13px] text-fg-muted">
-          0 confirmed correlations: no earlier response was proven to produce a value that a later request reuses in both runs. Nothing was fabricated.
+          No confirmed correlations yet. Review suggested dependencies or run auto-correlation to connect values reused by later requests.
         </p>
       )}
       {summary.readiness.blockers.map((b) => (

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 from ..core.config import Settings
 from ..domain.enums import Confidence, DataType, LocationType, RuleOrigin, RuleState
@@ -24,7 +24,7 @@ from ..utils.naming import (
 from .consumer_finder import _field_name, is_correlatable_source
 from .correlation_engine import _extractor_for, _is_excluded, _match_consumer, _resource_id_path_match, _response_usable
 from .header_policy import is_correlation_target
-from .value_indexer import index_request_sinks, index_response_sources
+from .value_indexer import index_request_sinks, index_response_sources, repeats_one_field
 
 _ARRAY_ROW = re.compile(r"^(.*)\[(\d+)\](?:\.[A-Za-z_]\w*|\['[^']*'\])$")
 
@@ -34,6 +34,15 @@ def _row(src: ValueOccurrence) -> tuple[str, str] | None:
     if src.location_type == LocationType.JSON_BODY and match:
         return match.group(1), f"{match.group(1)}[{match.group(2)}]"
     return None
+
+
+def _unambiguous(produced: list[ValueOccurrence]) -> list[ValueOccurrence]:
+    """Sources whose value says which one it is; of an envelope's repeat of one
+    field the first copy stands."""
+    by_value: dict[str, list[ValueOccurrence]] = defaultdict(list)
+    for src in produced:
+        by_value[src.raw_value].append(src)
+    return [group[0] for group in by_value.values() if len(group) == 1 or repeats_one_field(group)]
 
 
 def auto_correlate(run: NormalizedRun, settings: Settings) -> list[CorrelationRule]:
@@ -72,8 +81,15 @@ def auto_correlate(run: NormalizedRun, settings: Settings) -> list[CorrelationRu
                     and fields_are_equivalent(_field_name(src), _field_name(sink))
                     and normalize_field_name(_field_name(src)).endswith(("id", "guid", "uuid"))
                 )
+                # A plain word in a URL path ('dashboard') is the route, not a value
+                # that happens to match a menu label.
+                route_word = (
+                    sink.location_type == LocationType.PATH and src.raw_value.isalpha() and src.raw_value.islower()
+                )
+                # Tokens have no spaces; a phrase in a header is the client describing itself.
+                header_phrase = sink.location_type == LocationType.HEADER and " " in src.raw_value
                 if matched and (
-                    not _is_excluded(src, settings)
+                    (not _is_excluded(src, settings) and not route_word and not header_phrase)
                     or named_identifier
                     or _resource_id_path_match(src, sink, execution)
                 ):
@@ -118,14 +134,11 @@ def auto_correlate(run: NormalizedRun, settings: Settings) -> list[CorrelationRu
 
         # The current response only becomes available AFTER its request.
         if _response_usable(execution):
-            produced = index_response_sources(execution)
-            counts = Counter(src.raw_value for src in produced)
             sources.extend(
-                src for src in produced
+                src for src in _unambiguous(index_response_sources(execution))
                 if src.location_type != LocationType.COOKIE
                 and is_correlatable_source(src)
                 and src.data_type not in (DataType.NULL, DataType.BOOLEAN)
-                and counts[src.raw_value] == 1
                 and src.raw_value
                 and not is_placeholder_value(src.raw_value)
             )

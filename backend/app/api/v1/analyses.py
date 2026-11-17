@@ -7,7 +7,8 @@ import json
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from ...core.config import Settings, get_settings
 from ...core.errors import conflict, not_found, validation_error
@@ -18,7 +19,7 @@ from ...repositories.account_store import AccountStore, User
 from ...repositories.analysis_store import Analysis, SessionStore
 from ...schemas import presenters
 from ...schemas.api import GenerateRequest, ValidateRequest
-from ...services import analysis_service, billing, jmeter_runner
+from ...services import analysis_service, billing, har_import, jmeter_runner
 from ...services.billing import DAY, Entitlement
 from ...services.jmx_builder import BuildOptions, JmxBuilder
 from ...services.jmx_validator import validate_jmx
@@ -59,6 +60,74 @@ async def create_analysis(
         raw = await f.read()
         payloads.append((f.filename or "report.json", raw))
     analysis = analysis_service.build_analysis(payloads, settings)
+    return _register_analysis(analysis, owner_key, ent, accounts, store)
+
+
+@router.post("/har/inspect")
+async def inspect_har(
+    files: list[UploadFile] = File(...),
+    settings: Settings = Depends(get_settings),
+    ent: Entitlement = Depends(get_entitlement),
+    _: None = Depends(enforce_rate_limit),
+) -> dict:
+    """What each recording holds and what would be kept. Nothing is stored."""
+    billing.ensure_can_start(ent)
+    recordings = await _read_recordings(files, settings)
+    return {"files": [presenters.har_recording_dto(r) for r in recordings]}
+
+
+@router.post("/har", status_code=201)
+async def create_har_analysis(
+    files: list[UploadFile] = File(...),
+    selected: str = Form(...),
+    settings: Settings = Depends(get_settings),
+    store: SessionStore = Depends(get_store),
+    owner_key: str = Depends(get_owner_key),
+    ent: Entitlement = Depends(get_entitlement),
+    accounts: AccountStore = Depends(get_account_store),
+    _: None = Depends(enforce_rate_limit),
+) -> dict:
+    """`selected` is a JSON list of entry indexes from the first recording."""
+    billing.ensure_can_start(ent)
+    chosen = _parse_selection(selected)
+    recordings = await _read_recordings(files, settings)
+    har_import.check_selection(recordings[0], chosen)
+    selections = [chosen] + [har_import.match_selection(recordings[0], chosen, r) for r in recordings[1:]]
+    if not all(selections):
+        raise validation_error("The second recording has none of the selected requests. Record the same flow again.")
+    for recording, selection in zip(recordings, selections, strict=True):
+        billing.ensure_file_fits(ent, filename=recording.filename, size=recording.cleaned_bytes(selection))
+    settings = billing.request_settings(settings, ent)
+    analysis = await run_in_threadpool(analysis_service.build_har_analysis, recordings, selections, settings)
+    return _register_analysis(analysis, owner_key, ent, accounts, store)
+
+
+async def _read_recordings(files: list[UploadFile], settings: Settings) -> list[har_import.HarRecording]:
+    if not files or len(files) > settings.max_files:
+        raise validation_error(f"Upload one or two recordings (received {len(files)}).")
+    recordings = []
+    for f in files:
+        filename = f.filename or "recording.har"
+        if f.size is not None:
+            har_import.ensure_recording_fits(f.size, filename=filename, settings=settings)
+        raw = await f.read()
+        recordings.append(await run_in_threadpool(har_import.parse_har, raw, filename=filename, settings=settings))
+    return recordings
+
+
+def _parse_selection(selected: str) -> set[int]:
+    try:
+        indexes = json.loads(selected)
+    except ValueError as exc:
+        raise validation_error("'selected' must be a JSON list of request numbers.") from exc
+    if not isinstance(indexes, list) or not all(type(i) is int for i in indexes):
+        raise validation_error("'selected' must be a JSON list of request numbers.")
+    return set(indexes)
+
+
+def _register_analysis(
+    analysis: Analysis, owner_key: str, ent: Entitlement, accounts: AccountStore, store: SessionStore,
+) -> dict:
     analysis.owner_key = owner_key
     billing.consume_use(accounts, ent, now=time.time())
     store.create(analysis)
@@ -69,7 +138,7 @@ async def create_analysis(
             now=time.time(), retention_seconds=ent.plan.retention_days * DAY, analysis_id=analysis.id,
         )
         accounts.update_history(entry.id, now=time.time(), request_count=len(run.executions))
-    log.info("analysis created", extra={"stage": "create", "analysis_id": analysis.id, "count": len(payloads)})
+    log.info("analysis created", extra={"stage": "create", "analysis_id": analysis.id})
     return presenters.analysis_summary(analysis)
 
 
@@ -541,13 +610,15 @@ def _accept_candidate(analysis: Analysis, candidate_id: str) -> CorrelationRule 
 
 
 def _generate(analysis: Analysis, body: GenerateRequest, *, persist: bool):
+    from_browser = analysis.source == "har"
     options = BuildOptions(
         num_threads=body.num_threads,
         loops=body.loops,
         parameterize_host=body.parameterize_host,
         include_cache_manager=body.include_cache_manager,
         include_static_secrets=body.include_static_secrets,
-        keep_user_agent=body.keep_user_agent,
+        keep_user_agent=from_browser if body.keep_user_agent is None else body.keep_user_agent,
+        browser_recording=from_browser,
     )
     rules = list(analysis.rules.values())
     builder = JmxBuilder(options)

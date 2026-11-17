@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CheckIcon, LightningIcon } from "@phosphor-icons/react";
+import { CheckIcon, LightningIcon, BrowserIcon, BracketsCurlyIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { api, type AnalysisSummary } from "@/lib/api";
 import { AppHeader } from "@/components/AppHeader";
 import { HealthPanel } from "@/components/HealthPanel";
@@ -13,6 +13,7 @@ import { ManualRuleForm } from "@/components/ManualRuleForm";
 import { PreviewGenerate } from "@/components/PreviewGenerate";
 import { HelpNote } from "@/components/HelpNote";
 import { CollectionWizard } from "@/components/collection/CollectionWizard";
+import { HarImport } from "@/components/collection/HarImport";
 import { ResultsHeader } from "@/components/results/ResultsHeader";
 import { NextStepCard } from "@/components/results/NextStepCard";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
@@ -20,6 +21,13 @@ import { Tabs } from "@/components/ui/Tabs";
 import { discardSession } from "@/lib/session";
 
 type Tab = "health" | "explorer" | "candidates" | "classification" | "graph" | "manual" | "generate";
+
+type InputMode = "collection" | "har";
+
+const INPUT_MODES: { id: InputMode; label: string }[] = [
+  { id: "collection", label: "Postman collection" },
+  { id: "har", label: "Browser recording (HAR)" },
+];
 
 type AutoCorrelateResult = Awaited<ReturnType<typeof api.autoCorrelate>>;
 
@@ -193,7 +201,7 @@ function Results({
                 "External credentials such as auth tokens become ${__P(name,)} in the plan; pass their real values at runtime with jmeter -Jname=<secret>. No secret is embedded."
               }
             />
-            <PreviewGenerate analysisId={summary.analysis_id} ruleCount={ruleCount} />
+            <PreviewGenerate analysisId={summary.analysis_id} ruleCount={ruleCount} browserRecording={summary.source === "har"} />
           </>
         )}
       </div>
@@ -205,6 +213,7 @@ export default function Page() {
   const [summary, setSummary] = useState<AnalysisSummary | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [wizardKey, setWizardKey] = useState(0);
+  const [inputMode, setInputMode] = useState<InputMode>("collection");
   const [tab, setTab] = useState<Tab>("health");
   const [ruleCount, setRuleCount] = useState(0);
   const [autoMsg, setAutoMsg] = useState<string | null>(null);
@@ -248,10 +257,10 @@ export default function Page() {
     setRuleCount(s.rule_count);
   }
 
-  function openAnalysis(s: AnalysisSummary, job: string | null = null) {
+  function openAnalysis(s: AnalysisSummary, job: string | null = null, firstTab: Tab = "health") {
     currentAnalysis.current = s.analysis_id;
     autoSubmitted.current = false;
-    setAutoBusy(false); setAutoMsg(null); setTab("health");
+    setAutoBusy(false); setAutoMsg(null); setTab(firstTab);
     setSummary(s); setRuleCount(s.rule_count); setJobId(job);
   }
 
@@ -266,9 +275,47 @@ export default function Page() {
   return (
     <ToastProvider>
       <AppHeader right={<button className="btn-ghost whitespace-nowrap" onClick={newAnalysis}>New analysis</button>} />
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <main id="main-content" className="workspace mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
         {!summary ? (
-          <CollectionWizard key={wizardKey} onDone={(s, job) => openAnalysis(s, job)} onJobCreated={setJobId} />
+          <>
+            <div className="workspace-heading mb-8">
+              <p className="eyebrow">Baseline / Test workspace</p>
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                <h1 className="text-3xl font-semibold tracking-[-0.045em] sm:text-[42px]">Good recordings. Reliable tests.</h1>
+                <a href="/guide" className="inline-flex items-center gap-2 text-sm font-medium text-fg-muted hover:text-accent-soft-ink">How it works <ArrowRightIcon aria-hidden size={16} /></a>
+              </div>
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-fg-muted">Bring your API journey. Review the dependencies. Build a JMeter plan with the values connected.</p>
+            </div>
+            <div role="tablist" aria-label="Recording source" className="source-picker mb-9 grid gap-3 sm:grid-cols-2">
+              {INPUT_MODES.map(({ id, label }) => {
+                const Icon = id === "collection" ? BracketsCurlyIcon : BrowserIcon;
+                return <button key={id} id={`source-${id}`} role="tab" aria-controls={`panel-${id}`} tabIndex={inputMode === id ? 0 : -1} aria-selected={inputMode === id} onClick={() => setInputMode(id)} onKeyDown={(event) => {
+                  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                  event.preventDefault();
+                  const next = event.key === "Home" ? "collection" : event.key === "End" ? "har" : id === "collection" ? "har" : "collection";
+                  setInputMode(next);
+                  document.getElementById(`source-${next}`)?.focus();
+                }} className="source-option focus-ring">
+                  <span className="source-icon"><Icon size={23} aria-hidden /></span>
+                  <span className="min-w-0 flex-1 text-left"><span className="block text-sm font-semibold">{label}</span><span className="mt-1 block text-xs text-fg-muted">{id === "collection" ? "Compare two fresh API runs" : "Clean a HAR and connect reused values"}</span></span>
+                  <span className="source-indicator" aria-hidden>{inputMode === id && <CheckIcon size={12} weight="bold" />}</span>
+                </button>;
+              })}
+            </div>
+            {/* Both stay mounted: leaving a tab must not abandon a running job or a review. */}
+            <div role="tabpanel" id="panel-collection" aria-labelledby="source-collection" hidden={inputMode !== "collection"}>
+              <CollectionWizard key={wizardKey} onDone={(s, job) => openAnalysis(s, job)} onJobCreated={setJobId} />
+            </div>
+            <div role="tabpanel" id="panel-har" aria-labelledby="source-har" hidden={inputMode !== "har"}>
+              <HarImport
+                key={wizardKey}
+                onDone={(s, note) => {
+                  openAnalysis(s, null, s.blocked ? "health" : "generate");
+                  setAutoMsg(note);
+                }}
+              />
+            </div>
+          </>
         ) : (
           <Results
             summary={summary}

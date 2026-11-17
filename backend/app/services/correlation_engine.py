@@ -101,6 +101,8 @@ def _extractor_for(occ: ValueOccurrence) -> tuple[ExtractorMethod, str]:
         return ExtractorMethod.JSON_PATH, occ.canonical_path
     if occ.location_type == LocationType.XML_BODY:
         return ExtractorMethod.XPATH2, occ.canonical_path
+    if occ.location_type == LocationType.HEADER and occ.canonical_path.startswith("[?&]"):
+        return ExtractorMethod.REGEX, occ.canonical_path  # a query value inside a Location header
     if occ.location_type in (LocationType.HEADER, LocationType.COOKIE):
         # Header/cookie value -> regex on the response headers.
         return ExtractorMethod.REGEX, _header_regex(occ)
@@ -271,6 +273,11 @@ class CorrelationEngine:
                 text_extraction = False
                 for sink in sinks:
                     if sink.execution_index <= exec_a.original_index:
+                        continue
+                    # A single capture cannot distinguish a static route from a
+                    # coincidentally equal menu label (e.g. icon='dashboard').
+                    if (sink.location_type == LocationType.PATH
+                            and src.raw_value.isalpha() and src.raw_value.islower()):
                         continue
                     matched, wrapper = _match_consumer(src.raw_value, sink)
                     if matched:

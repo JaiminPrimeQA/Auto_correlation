@@ -15,6 +15,16 @@ def _pair(scenario):
     return base, comp, alignment, s
 
 
+def test_single_run_menu_label_is_not_a_dynamic_route():
+    settings = Settings()
+    run = normalize_run(b.report("Menu", [
+        b.execution("Menus", "GET", "https://api.test/menus",
+                    resp_body={"icon": "dashboard"}, position=0),
+        b.execution("History", "GET", "https://api.test/api/dashboard/history", position=1),
+    ]), filename="menu.json", settings=settings)
+    assert CorrelationEngine(settings).analyze_single_run(run) == []
+
+
 def test_short_booking_id_is_detected_across_two_runs():
     def scenario(role):
         identifier = 43 if role == "baseline" else 57

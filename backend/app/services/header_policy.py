@@ -25,6 +25,17 @@ NON_REPLAYED_HEADERS = frozenset({
     "accept-encoding",
 })
 
+# Describe the browser, not the session. A response that echoes one of these
+# (CORS headers, a chat widget's settings) is never where the value came from.
+BROWSER_HEADERS = frozenset({
+    "accept",
+    "accept-language",
+    "content-type",
+    "origin",
+    "referer",
+    "upgrade-insecure-requests",
+})
+
 # Dropped unless the tester explicitly keeps it (BuildOptions.keep_user_agent);
 # it is the client's own identity, never a value produced by the server.
 USER_AGENT = "user-agent"
@@ -35,4 +46,4 @@ def is_correlation_target(sink: ValueOccurrence) -> bool:
     if sink.location_type != LocationType.HEADER:
         return True
     name = (sink.key or sink.canonical_path).lower()
-    return name not in NON_REPLAYED_HEADERS and name != USER_AGENT
+    return name not in NON_REPLAYED_HEADERS | BROWSER_HEADERS and name != USER_AGENT

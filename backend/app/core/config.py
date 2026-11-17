@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # --- Upload / parsing limits ---
     max_file_bytes: int = 25 * MIB
     max_files: int = 2
+    # Raw browser recording. The plan limit applies to the size left after cleaning.
+    max_har_bytes: int = 200 * MIB
     max_json_depth: int = 64
     max_array_length: int = 200_000
     max_buffer_length: int = 25 * MIB

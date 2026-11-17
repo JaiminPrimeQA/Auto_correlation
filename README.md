@@ -223,6 +223,34 @@ Supported response body shapes: `stream = {type:"Buffer", data:[...]}`, raw int 
 
 ---
 
+## Browser recordings (HAR)
+
+Open the **Browser recording (HAR)** tab and upload a file saved from Chrome DevTools > Network. Nothing is replayed
+against your site.
+
+1. Scripts, styles, images, fonts, CORS preflights, trackers and followed redirect hops are removed.
+2. Review what is left. Third-party calls and failed attempts (such as a login with a wrong password) start unticked.
+3. Convert. The requests are auto-correlated and the Generate tab opens with your JMeter plan.
+
+One recording is enough, but correlations are lower confidence because nothing proves a value changes. A second
+recording of the same flow uses the two-run engine.
+
+Plans from a recording are built to run as they are:
+
+- `Username` and other login names become `${__P(Username,recorded value)}`, so `-JUsername=...` picks another user.
+- Year, month, day and ISO dates in URLs that match the recording day use `${__time()}`.
+- Recorded success flags such as `isLoginSuccessful` are asserted, because a failed login can be an HTTP 200.
+- A failed login stops that user, so a wrong password isn't retried into an account lockout.
+- A missing password stops the user before the login is sent. Type it in the plan's User Defined Variables, or pass `-JCode=value`.
+- Values are read from JSON, response headers, HTML forms, `<meta>` tags, page scripts and redirect URLs, and URL-encoded query values match too.
+- Not covered yet: a value embedded inside a JSON string in a request body, or a value that first appears in a response the recording left out.
+- The browser's `User-Agent` is kept, cookies clear each iteration, and result listeners are included.
+
+Raw files are accepted up to `B11_MAX_HAR_BYTES` (200 MB). The plan's file limit applies to the cleaned size. The
+credentials in a login body become `${__P(name,)}` in the plan, so pass them at run time with `-Jname=value`. Recorded
+cookies stay out of the plan unless an earlier response supplied the value. HAR files hold real credentials, so don't
+commit them.
+
 ## Seven-request webhook demo
 
 Upload `samples/webhook-baseline.json` and `samples/webhook-comparison.json` for
