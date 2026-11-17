@@ -62,8 +62,10 @@ class MaintenanceLoop:
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                r = run_maintenance(self._store, self._mailer, self._settings, now=time.time())
-                if r.reminders or r.expiry_notices or r.history_removed:
+                with self._store.exclusive("b11-maintenance") as mine:
+                    # Another replica holds the lock and is doing this pass.
+                    r = run_maintenance(self._store, self._mailer, self._settings, now=time.time()) if mine else None
+                if r is not None and (r.reminders or r.expiry_notices or r.history_removed):
                     log.info(
                         f"maintenance: {r.reminders} reminder(s), {r.expiry_notices} expiry notice(s), "
                         f"{r.history_removed} history entr(y/ies) removed",

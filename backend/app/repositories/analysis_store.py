@@ -80,6 +80,14 @@ class SessionStore(ABC):
     @abstractmethod
     def cleanup(self) -> int: ...
 
+    def save(self, analysis: Analysis) -> None:  # noqa: B027 - optional hook
+        """Persist changes made to a loaded analysis. In-memory stores hold
+        the live object, so there is nothing to write."""
+
+    def discard(self, analysis_id: str) -> None:  # noqa: B027 - optional hook
+        """Drop any cached copy (after a failed request) so the next read
+        reloads the last saved state."""
+
 
 class InMemorySessionStore(SessionStore):
     def __init__(self, ttl_seconds: int) -> None:

@@ -110,8 +110,15 @@ class Settings(BaseSettings):
 
     # --- Session store ---
     session_ttl_seconds: int = 30 * 60
-    session_store: str = "memory"  # memory | redis
-    redis_url: str | None = None
+    # `memory`: live objects in this process (development; one replica only).
+    # `file`: signed snapshots in `session_dir` (one host, or a shared EFS mount).
+    # `s3`: signed snapshots in `state_bucket` (production; any number of replicas).
+    session_store: Literal["memory", "file", "s3"] = "memory"
+    session_dir: str = "data/analyses"
+    state_bucket: str | None = None
+    # HMAC key that authenticates stored analysis snapshots (>= 16 chars).
+    # Keep it in a secret store; rotating it invalidates analyses in progress.
+    state_signing_key: str | None = None
 
     # --- Rate limiting (token bucket per client) ---
     rate_limit_enabled: bool = True
@@ -157,8 +164,19 @@ class Settings(BaseSettings):
     # SQLite file holding accounts, subscriptions, free-use counters and the
     # analysis history of paid users (":memory:" for tests). Single instance only.
     database_path: str = "data/baseline11.db"
-    # Saved history files (collection, JMX, manifest), one folder per entry.
+    # PostgreSQL URL (postgresql://user:pass@host:5432/db). When set it wins
+    # over database_path and every replica shares the same accounts. Inject it
+    # from a secret store; never bake it into an image.
+    database_url: str | None = None
+    database_pool_size: int = 10
+    # Apply pending schema migrations at start-up (under an advisory lock).
+    # Turn off when migrations run as a separate one-off task.
+    database_auto_migrate: bool = True
+    # Saved history files (collection, JMX, manifest): `local` folder per
+    # entry under history_dir, or `s3` under history/ in history_bucket.
+    history_backend: Literal["local", "s3"] = "local"
     history_dir: str = "data/history"
+    history_bucket: str | None = None
     # Require a signed-in account before any analysis, so every use (free or
     # paid) is counted against an account. Ignored in OIDC mode, where the
     # identity provider already gates the API.
@@ -214,6 +232,10 @@ class Settings(BaseSettings):
     # --- Background maintenance (reminders, expiry notices, history purge) ---
     maintenance_enabled: bool = True
     maintenance_interval_seconds: int = 900
+
+    @property
+    def account_database(self) -> str:
+        return self.database_url or self.database_path
 
     @property
     def is_production(self) -> bool:

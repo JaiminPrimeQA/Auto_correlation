@@ -29,6 +29,23 @@ def _aws_problems(settings: Settings) -> list[str]:
     return problems
 
 
+def _storage_problems(settings: Settings) -> list[str]:
+    """Several API replicas, rolling deploys and task replacement all need
+    state outside the container: nothing may live on the task's disk."""
+    from ..repositories.account_store import is_postgres_url
+
+    problems = []
+    if not (settings.database_url and is_postgres_url(settings.database_url)):
+        problems.append("B11_DATABASE_URL must be a postgresql:// URL: accounts must be shared by every replica.")
+    if settings.history_backend != "s3" or not settings.history_bucket:
+        problems.append("B11_HISTORY_BACKEND=s3 and B11_HISTORY_BUCKET are required: task disks are not durable.")
+    if settings.session_store != "s3" or not settings.state_bucket:
+        problems.append("B11_SESSION_STORE=s3 and B11_STATE_BUCKET are required: analyses must survive redeploys.")
+    if not settings.state_signing_key or len(settings.state_signing_key) < 32:
+        problems.append("B11_STATE_SIGNING_KEY must be a secret of at least 32 characters.")
+    return problems
+
+
 def check_production_settings(settings: Settings, *, role: Literal["api", "worker"] = "api") -> None:
     if not settings.is_production:
         return
@@ -51,8 +68,7 @@ def check_production_settings(settings: Settings, *, role: Literal["api", "worke
             problems.append("B11_OIDC_AUDIENCE is required.")
         if settings.billing_provider == "demo":
             problems.append("B11_BILLING_PROVIDER=demo activates plans without payment; configure a real provider.")
-        if settings.database_path == ":memory:":
-            problems.append("B11_DATABASE_PATH must be a file: accounts and plans would be lost on restart.")
+        problems += _storage_problems(settings)
         origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
         if not origins or any(o == "*" or not o.startswith("https://") for o in origins):
             problems.append("B11_CORS_ORIGINS must list explicit https origins (no wildcard) in production.")

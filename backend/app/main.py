@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .api.deps import DEVICE_COOKIE, get_principal
+from .api.persistence import AnalysisPersistenceMiddleware
 from .api.v1 import accounts, analyses, billing, downloads, execution_jobs, rules
 from .core.config import Settings, get_settings
 from .core.errors import (
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json",
     )
 
+    app.add_middleware(AnalysisPersistenceMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,

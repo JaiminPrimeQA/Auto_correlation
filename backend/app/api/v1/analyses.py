@@ -7,7 +7,7 @@ import json
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from ...core.config import Settings, get_settings
@@ -24,6 +24,7 @@ from ...services.billing import DAY, Entitlement
 from ...services.jmx_builder import BuildOptions, JmxBuilder
 from ...services.jmx_validator import validate_jmx
 from ...services.manifest_builder import build_manifest
+from ..persistence import untrack
 from ..deps import (
     enforce_rate_limit,
     get_account_store,
@@ -59,8 +60,9 @@ async def create_analysis(
     for f in files:
         raw = await f.read()
         payloads.append((f.filename or "report.json", raw))
-    analysis = analysis_service.build_analysis(payloads, settings)
-    return _register_analysis(analysis, owner_key, ent, accounts, store)
+    # Parsing and correlating a large report is CPU-bound: keep it off the event loop.
+    analysis = await run_in_threadpool(analysis_service.build_analysis, payloads, settings)
+    return await run_in_threadpool(_register_analysis, analysis, owner_key, ent, accounts, store)
 
 
 @router.post("/har/inspect")
@@ -99,7 +101,7 @@ async def create_har_analysis(
         billing.ensure_file_fits(ent, filename=recording.filename, size=recording.cleaned_bytes(selection))
     settings = billing.request_settings(settings, ent)
     analysis = await run_in_threadpool(analysis_service.build_har_analysis, recordings, selections, settings)
-    return _register_analysis(analysis, owner_key, ent, accounts, store)
+    return await run_in_threadpool(_register_analysis, analysis, owner_key, ent, accounts, store)
 
 
 async def _read_recordings(files: list[UploadFile], settings: Settings) -> list[har_import.HarRecording]:
@@ -143,20 +145,21 @@ def _register_analysis(
 
 
 @router.get("/{analysis_id}")
-async def get_analysis(analysis: Analysis = Depends(require_analysis)) -> dict:
+def get_analysis(analysis: Analysis = Depends(require_analysis)) -> dict:
     return presenters.analysis_summary(analysis)
 
 
 @router.delete("/{analysis_id}", status_code=204)
-async def delete_analysis(
-    analysis: Analysis = Depends(require_analysis), store: SessionStore = Depends(get_store),
+def delete_analysis(
+    request: Request, analysis: Analysis = Depends(require_analysis), store: SessionStore = Depends(get_store),
 ) -> None:
+    untrack(request, analysis.id)
     if not store.delete(analysis.id):
         raise not_found("Analysis not found or expired.")
 
 
 @router.get("/{analysis_id}/executions")
-async def list_executions(
+def list_executions(
     analysis: Analysis = Depends(require_analysis),
     run: str = Query("baseline", pattern="^(baseline|comparison)$"),
     page: int = Query(1, ge=1),
@@ -178,7 +181,7 @@ async def list_executions(
 
 
 @router.get("/{analysis_id}/executions/{execution_id}")
-async def get_execution(
+def get_execution(
     execution_id: str, analysis: Analysis = Depends(require_analysis)
 ) -> dict:
     for run in (analysis.baseline_run, analysis.comparison_run):
@@ -191,7 +194,7 @@ async def get_execution(
 
 
 @router.get("/{analysis_id}/executions/{execution_id}/occurrences")
-async def list_occurrences(
+def list_occurrences(
     execution_id: str,
     side: str = Query("response", pattern="^(request|response)$"),
     analysis: Analysis = Depends(require_analysis),
@@ -209,7 +212,7 @@ async def list_occurrences(
 
 
 @router.get("/{analysis_id}/find-consumers")
-async def find_consumers_endpoint(
+def find_consumers_endpoint(
     producer_execution_id: str = Query(...),
     location_type: str = Query(...),
     canonical_path: str = Query(...),
@@ -263,7 +266,7 @@ async def find_consumers_endpoint(
 
 
 @router.get("/{analysis_id}/candidates")
-async def list_candidates(
+def list_candidates(
     analysis: Analysis = Depends(require_analysis),
     confidence: str | None = Query(None),
     extractor: str | None = Query(None),
@@ -280,7 +283,7 @@ async def list_candidates(
 
 
 @router.get("/{analysis_id}/insights")
-async def list_insights(
+def list_insights(
     analysis: Analysis = Depends(require_analysis),
     classification: str | None = Query(None),
 ) -> dict:
@@ -295,7 +298,7 @@ async def list_insights(
 
 
 @router.get("/{analysis_id}/graph")
-async def dependency_graph(analysis: Analysis = Depends(require_analysis)) -> dict:
+def dependency_graph(analysis: Analysis = Depends(require_analysis)) -> dict:
     """Nodes (one per API) and directed producer→consumer edges for the
     dependency graph view. Edges carry variable, response key, consumer
     location, confidence and state so the client can label and filter them."""
@@ -305,7 +308,7 @@ async def dependency_graph(analysis: Analysis = Depends(require_analysis)) -> di
 
 
 @router.post("/{analysis_id}/auto-correlate")
-async def auto_correlate_endpoint(
+def auto_correlate_endpoint(
     analysis: Analysis = Depends(require_analysis),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -397,7 +400,7 @@ async def auto_correlate_endpoint(
 
 
 @router.post("/{analysis_id}/candidates/{candidate_id}/accept")
-async def accept_candidate(
+def accept_candidate(
     candidate_id: str, analysis: Analysis = Depends(require_analysis)
 ) -> dict:
     rule = _accept_candidate(analysis, candidate_id)
@@ -407,7 +410,7 @@ async def accept_candidate(
 
 
 @router.post("/{analysis_id}/candidates/accept-high")
-async def accept_high(analysis: Analysis = Depends(require_analysis)) -> dict:
+def accept_high(analysis: Analysis = Depends(require_analysis)) -> dict:
     _require_healthy_automatic_correlation(analysis)
     accepted = []
     for c in analysis.candidates:
@@ -419,7 +422,7 @@ async def accept_high(analysis: Analysis = Depends(require_analysis)) -> dict:
 
 
 @router.post("/{analysis_id}/candidates/{candidate_id}/reject")
-async def reject_candidate(
+def reject_candidate(
     candidate_id: str, analysis: Analysis = Depends(require_analysis)
 ) -> dict:
     for c in analysis.candidates:
@@ -430,7 +433,7 @@ async def reject_candidate(
 
 
 @router.post("/{analysis_id}/preview")
-async def preview(
+def preview(
     body: GenerateRequest | None = None,
     analysis: Analysis = Depends(require_analysis),
 ) -> dict:
@@ -445,7 +448,7 @@ async def preview(
 
 
 @router.post("/{analysis_id}/generate")
-async def generate(
+def generate(
     body: GenerateRequest | None = None,
     analysis: Analysis = Depends(require_analysis),
     user: User | None = Depends(get_current_user),
@@ -521,7 +524,7 @@ async def validate(
 
 
 @router.get("/{analysis_id}/validation")
-async def get_validation(analysis: Analysis = Depends(require_analysis)) -> dict:
+def get_validation(analysis: Analysis = Depends(require_analysis)) -> dict:
     return {
         "jmx_status": analysis.jmx_status,
         "jmeter_available": jmeter_runner.jmeter_available(get_settings()),

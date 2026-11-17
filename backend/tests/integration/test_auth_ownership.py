@@ -123,3 +123,18 @@ def test_concurrency_cap_is_per_user_not_per_ip(client):
         assert _create_job(client, _auth("carol")).status_code == 202
     assert _create_job(client, _auth("carol")).status_code == 429
     assert _create_job(client, _auth("dave")).status_code == 202
+
+
+def test_oidc_identity_gets_its_own_account(client):
+    first = client.get("/api/v1/account/me", headers=_auth("alice"))
+    again = client.get("/api/v1/account/me", headers=_auth("alice"))
+    other = client.get("/api/v1/account/me", headers=_auth("bob"))
+    assert first.status_code == 200, first.text
+    assert first.json()["user"]["id"] == again.json()["user"]["id"]
+    assert first.json()["user"]["id"] != other.json()["user"]["id"]
+
+
+def test_password_sign_in_is_off_in_oidc_mode(client):
+    body = {"name": "Eve", "email": "eve@example.com", "password": "correct horse battery"}
+    assert client.post("/api/v1/auth/register", json=body, headers=_auth("eve")).status_code == 404
+    assert client.post("/api/v1/auth/login", json=body, headers=_auth("eve")).status_code == 404

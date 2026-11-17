@@ -22,6 +22,7 @@ from ..services.fake_newman_runner import canned_fake_runner
 from ..services.job_dispatcher import JobDispatcher, ThreadPoolJobDispatcher
 from ..services.job_launcher import JobLauncher, LocalJobLauncher, QueueJobLauncher
 from ..services.mailer import Mailer, build_mailer
+from .persistence import track
 
 SESSION_COOKIE = "b11_session"
 DEVICE_COOKIE = "b11_device"
@@ -29,8 +30,34 @@ DEVICE_COOKIE = "b11_device"
 
 @lru_cache
 def get_store() -> SessionStore:
+    """Where analyses live. `memory` (development, single process) keeps the
+    live objects; `file` and `s3` keep signed snapshots in shared storage so
+    restarts, redeploys and several API replicas all see the same state."""
     settings = get_settings()
-    return InMemorySessionStore(ttl_seconds=settings.session_ttl_seconds)
+    backend = settings.session_store
+    if backend == "memory":
+        return InMemorySessionStore(ttl_seconds=settings.session_ttl_seconds)
+    from ..repositories.persistent_analysis_store import (
+        FileBlobBackend,
+        PersistentSessionStore,
+        S3BlobBackend,
+    )
+
+    if not settings.state_signing_key:
+        raise RuntimeError(f"session_store={backend} requires B11_STATE_SIGNING_KEY.")
+    blobs: FileBlobBackend | S3BlobBackend
+    if backend == "file":
+        blobs = FileBlobBackend(settings.session_dir)
+    else:
+        from ..core.aws import aws_client, require
+
+        require(settings, "aws_region", "state_bucket")
+        blobs = S3BlobBackend(
+            aws_client("s3", settings), str(settings.state_bucket), kms_key_id=settings.kms_key_id,
+        )
+    return PersistentSessionStore(
+        blobs, ttl_seconds=settings.session_ttl_seconds, signing_key=settings.state_signing_key,
+    )
 
 
 @lru_cache
@@ -84,7 +111,19 @@ def get_principal(
 @lru_cache
 def get_account_store() -> AccountStore:
     settings = get_settings()
-    return AccountStore(settings.database_path, settings.history_dir)
+    history: str | object = settings.history_dir
+    if settings.history_backend == "s3":
+        from ..core.aws import aws_client, require
+        from ..repositories.history_files import S3HistoryFiles
+
+        require(settings, "aws_region", "history_bucket")
+        history = S3HistoryFiles(
+            aws_client("s3", settings), str(settings.history_bucket), kms_key_id=settings.kms_key_id,
+        )
+    return AccountStore(
+        settings.account_database, history,  # type: ignore[arg-type]
+        auto_migrate=settings.database_auto_migrate, pool_size=settings.database_pool_size,
+    )
 
 
 @lru_cache
@@ -109,9 +148,17 @@ def get_device_id(request: Request) -> str | None:
 
 
 def get_current_user(
-    request: Request, store: AccountStore = Depends(get_account_store),
+    request: Request,
+    store: AccountStore = Depends(get_account_store),
+    principal: Principal | None = Depends(get_principal),
 ) -> User | None:
-    """The signed-in account (session cookie), or None."""
+    """The signed-in account: the one linked to the OIDC subject in OIDC mode
+    (so plans, free uses and history follow the identity), otherwise the
+    session cookie's account, or None."""
+    if principal is not None:
+        return store.ensure_external_user(
+            subject=principal.subject, email=principal.email, name=None, now=time.time(),
+        )
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
@@ -154,6 +201,7 @@ def enforce_rate_limit(settings: Settings = Depends(get_settings), owner_key: st
 
 def require_analysis(
     analysis_id: str,
+    request: Request,
     store: SessionStore = Depends(get_store),
     owner_key: str = Depends(get_owner_key),
 ) -> Analysis:
@@ -161,6 +209,8 @@ def require_analysis(
     # Another owner's analysis is indistinguishable from a missing one.
     if analysis is None or analysis.owner_key != owner_key:
         raise not_found("Analysis not found or expired.")
+    # Saved back to shared storage once the request succeeds (see persistence.py).
+    track(request, analysis, store)
     return analysis
 
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from ...core.config import Settings, get_settings
-from ...core.errors import ProblemException, rate_limited, unauthorized, validation_error
+from ...core.errors import ProblemException, not_found, rate_limited, unauthorized, validation_error
 from ...core.logging import get_logger
 from ...core.passwords import (
     MAX_PASSWORD_LENGTH,
@@ -41,6 +41,13 @@ from ..deps import (
 )
 
 router = APIRouter(tags=["account"])
+
+
+def password_auth_enabled(settings: Settings = Depends(get_settings)) -> None:
+    """In OIDC mode the identity provider signs people in; the password
+    endpoints are switched off so there is only one way in."""
+    if settings.auth_mode == "oidc":
+        raise not_found("Sign-in is handled by your organisation's identity provider.")
 log = get_logger("accounts")
 
 _EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
@@ -141,7 +148,7 @@ async def me(
     return _me(ent, store, settings)
 
 
-@router.post("/auth/register", status_code=201)
+@router.post("/auth/register", status_code=201, dependencies=[Depends(password_auth_enabled)])
 async def register(
     body: RegisterRequest,
     request: Request,
@@ -167,7 +174,7 @@ async def register(
     return {"user": billing.user_dto(user)}
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", dependencies=[Depends(password_auth_enabled)])
 async def login(
     body: LoginRequest,
     request: Request,
@@ -199,7 +206,7 @@ async def logout(
     response.delete_cookie(SESSION_COOKIE, path="/")
 
 
-@router.post("/auth/forgot-password", status_code=202)
+@router.post("/auth/forgot-password", status_code=202, dependencies=[Depends(password_auth_enabled)])
 async def forgot_password(
     body: ForgotPasswordRequest,
     request: Request,
@@ -218,7 +225,7 @@ async def forgot_password(
     return {"detail": "If an account uses this email, a reset link is on its way."}
 
 
-@router.post("/auth/reset-password")
+@router.post("/auth/reset-password", dependencies=[Depends(password_auth_enabled)])
 async def reset_password(
     body: ResetPasswordRequest,
     request: Request,

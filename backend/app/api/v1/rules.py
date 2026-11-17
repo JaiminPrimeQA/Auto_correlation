@@ -53,7 +53,7 @@ def _resolve_consumer(analysis: Analysis, ref: OccurrenceRef) -> ValueOccurrence
 
 
 @router.post("", status_code=201)
-async def create_rule(
+def create_rule(
     body: RuleCreateRequest, analysis: Analysis = Depends(require_analysis)
 ) -> dict:
     producer = _resolve_producer(analysis, body.producer)
@@ -88,7 +88,7 @@ async def create_rule(
 
 
 @router.patch("/{rule_id}")
-async def update_rule(
+def update_rule(
     rule_id: str, body: RuleUpdateRequest, analysis: Analysis = Depends(require_analysis)
 ) -> dict:
     original = analysis.rules.get(rule_id)
@@ -124,7 +124,7 @@ async def update_rule(
 
 
 @router.delete("/{rule_id}", status_code=204)
-async def delete_rule(rule_id: str, analysis: Analysis = Depends(require_analysis)) -> None:
+def delete_rule(rule_id: str, analysis: Analysis = Depends(require_analysis)) -> None:
     if rule_id not in analysis.rules:
         raise not_found("Rule not found.")
     analysis.rules.pop(rule_id)
@@ -133,7 +133,7 @@ async def delete_rule(rule_id: str, analysis: Analysis = Depends(require_analysi
 
 
 @router.post("/{rule_id}/validate")
-async def validate_rule_endpoint(
+def validate_rule_endpoint(
     rule_id: str, analysis: Analysis = Depends(require_analysis)
 ) -> dict:
     rule = analysis.rules.get(rule_id)

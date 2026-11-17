@@ -1,25 +1,37 @@
-"""Durable account state in SQLite: users, sign-in sessions, password resets,
+"""Durable account state: users, sign-in sessions, password resets,
 subscriptions, free-use counters and the analysis history of paid users.
 
-Analyses themselves stay ephemeral (see ``analysis_store``). This store keeps
-only what must outlive them. History files live on disk under
-``history_dir/<entry id>/``; the database holds their metadata.
+Analyses themselves live in the session store (see ``analysis_store``). This
+store keeps only what must outlive them.
 
-One connection guarded by a lock: SQLite serialises writes anyway, and the
-volumes involved are small. It suits a single API instance; several
-instances need a shared database behind the same interface.
+Two databases sit behind one interface:
+
+* SQLite (``B11_DATABASE_PATH`` is a file path or ``:memory:``) for local
+  development and tests - one process only.
+* PostgreSQL (``B11_DATABASE_PATH`` is a ``postgresql://`` URL) for
+  production, shared by every API replica and the maintenance job. Schema
+  changes are versioned migrations applied under an advisory lock, so
+  replicas starting together never race.
+
+History files (collection, JMX, manifest) go to a ``HistoryFiles`` backend:
+a local folder, or S3 in production.
 """
 
 from __future__ import annotations
 
-import shutil
+import re
 import sqlite3
 import threading
+import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol
 
 from ..core.passwords import new_token, token_digest
+from .history_files import HistoryFiles, LocalHistoryFiles
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -138,49 +150,298 @@ class HistoryEntry:
     expires_at: float
 
 
-def _user(row: sqlite3.Row | None) -> User | None:
-    return User(**dict(row)) if row else None
+def _user(row: dict | None) -> User | None:
+    return User(**row) if row else None
 
 
-def _subscription(row: sqlite3.Row) -> Subscription:
-    return Subscription(**dict(row))
+def _subscription(row: dict) -> Subscription:
+    return Subscription(**row)
 
 
-def _history(row: sqlite3.Row) -> HistoryEntry:
+def _history(row: dict) -> HistoryEntry:
     data = dict(row)
     for flag in ("has_collection", "has_jmx", "has_manifest"):
         data[flag] = bool(data[flag])
     return HistoryEntry(**data)
 
 
-class AccountStore:
-    def __init__(self, database_path: str, history_dir: str) -> None:
-        if database_path != ":memory:":
-            Path(database_path).parent.mkdir(parents=True, exist_ok=True)
-        self._history_dir = Path(history_dir)
+# Versioned schema. Append new migrations; never edit an applied one.
+MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA)]
+
+
+class _Cursor(Protocol):
+    def one(self, sql: str, params: tuple = ()) -> dict | None: ...
+    def all(self, sql: str, params: tuple = ()) -> list[dict]: ...
+    def run(self, sql: str, params: tuple = ()) -> int: ...
+
+
+class _Database:
+    """The SQL both databases share is written with ``?`` placeholders; the
+    PostgreSQL backend rewrites them. ``greatest`` names the two-argument
+    maximum (SQLite ``MAX``, PostgreSQL ``GREATEST``)."""
+
+    dialect: str
+    greatest: str
+    integrity_errors: tuple[type[Exception], ...]
+
+    def one(self, sql: str, params: tuple = ()) -> dict | None:
+        raise NotImplementedError
+
+    def all(self, sql: str, params: tuple = ()) -> list[dict]:
+        raise NotImplementedError
+
+    def run(self, sql: str, params: tuple = ()) -> int:
+        raise NotImplementedError
+
+    def transaction(self, lock_keys: tuple[str, ...] = ()) -> Any:
+        raise NotImplementedError
+
+    def migrate(self) -> int:
+        raise NotImplementedError
+
+    def ping(self) -> None:
+        self.one("SELECT 1 AS ok")
+
+    @contextmanager
+    def exclusive(self, name: str) -> Iterator[bool]:
+        """Whether this process may run the named singleton job now."""
+        yield True
+
+    def close(self) -> None:
+        return None
+
+
+class _SqliteCursor:
+    def __init__(self, db: sqlite3.Connection) -> None:
+        self._db = db
+
+    def one(self, sql: str, params: tuple = ()) -> dict | None:
+        row = self._db.execute(sql, params).fetchone()
+        return dict(row) if row is not None else None
+
+    def all(self, sql: str, params: tuple = ()) -> list[dict]:
+        return [dict(r) for r in self._db.execute(sql, params).fetchall()]
+
+    def run(self, sql: str, params: tuple = ()) -> int:
+        return self._db.execute(sql, params).rowcount
+
+
+class _SqliteDatabase(_Database):
+    """One connection guarded by a lock: SQLite serialises writes anyway."""
+
+    dialect = "sqlite"
+    greatest = "MAX"
+    integrity_errors = (sqlite3.IntegrityError,)
+
+    def __init__(self, path: str) -> None:
+        if path != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        self._db = sqlite3.connect(database_path, check_same_thread=False, isolation_level=None)
+        self._db = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA foreign_keys = ON")
-        if database_path != ":memory:":
+        if path != ":memory:":
             self._db.execute("PRAGMA journal_mode = WAL")
-        self._db.executescript(_SCHEMA)
+        self._cursor = _SqliteCursor(self._db)
+
+    def one(self, sql: str, params: tuple = ()) -> dict | None:
+        with self._lock:
+            return self._cursor.one(sql, params)
+
+    def all(self, sql: str, params: tuple = ()) -> list[dict]:
+        with self._lock:
+            return self._cursor.all(sql, params)
+
+    def run(self, sql: str, params: tuple = ()) -> int:
+        with self._lock:
+            return self._cursor.run(sql, params)
+
+    @contextmanager
+    def transaction(self, lock_keys: tuple[str, ...] = ()) -> Iterator[_Cursor]:
+        with self._lock:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                yield self._cursor
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+            self._db.execute("COMMIT")
+
+    def migrate(self) -> int:
+        with self._lock:
+            self._db.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at REAL NOT NULL)"
+            )
+            done = {r[0] for r in self._db.execute("SELECT version FROM schema_migrations").fetchall()}
+            applied = 0
+            for version, script in MIGRATIONS:
+                if version in done:
+                    continue
+                self._db.executescript(script)
+                self._db.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", (version, time.time()),
+                )
+                applied += 1
+            return applied
 
     def close(self) -> None:
         with self._lock:
             self._db.close()
 
-    def _one(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
-        with self._lock:
-            return self._db.execute(sql, params).fetchone()
 
-    def _all(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
-        with self._lock:
-            return self._db.execute(sql, params).fetchall()
+_PLACEHOLDER = re.compile(r"\?")
+# Any constant works; it only has to be the same in every replica.
+_MIGRATION_LOCK = 0x0B110001
+
+
+def _pg_sql(sql: str) -> str:
+    return _PLACEHOLDER.sub("%s", sql)
+
+
+def _pg_schema(script: str) -> list[str]:
+    script = re.sub(r"\bREAL\b", "DOUBLE PRECISION", script)
+    return [stmt.strip() for stmt in script.split(";") if stmt.strip()]
+
+
+class _PgCursor:
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def one(self, sql: str, params: tuple = ()) -> dict | None:
+        cur = self._conn.execute(_pg_sql(sql), params)
+        return cur.fetchone() if cur.description else None
+
+    def all(self, sql: str, params: tuple = ()) -> list[dict]:
+        return list(self._conn.execute(_pg_sql(sql), params).fetchall())
+
+    def run(self, sql: str, params: tuple = ()) -> int:
+        return int(self._conn.execute(_pg_sql(sql), params).rowcount)
+
+
+class _PostgresDatabase(_Database):
+    """A connection pool shared by the request threads of one replica."""
+
+    dialect = "postgresql"
+    greatest = "GREATEST"
+
+    def __init__(self, url: str, *, pool_size: int = 10) -> None:
+        import psycopg
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+
+        self.integrity_errors = (psycopg.errors.IntegrityError,)
+        self._pool = ConnectionPool(
+            url, min_size=1, max_size=max(pool_size, 1), open=True, timeout=10,
+            kwargs={"autocommit": True, "row_factory": dict_row},
+            check=ConnectionPool.check_connection,
+        )
+
+    def one(self, sql: str, params: tuple = ()) -> dict | None:
+        with self._pool.connection() as conn:
+            return _PgCursor(conn).one(sql, params)
+
+    def all(self, sql: str, params: tuple = ()) -> list[dict]:
+        with self._pool.connection() as conn:
+            return _PgCursor(conn).all(sql, params)
+
+    def run(self, sql: str, params: tuple = ()) -> int:
+        with self._pool.connection() as conn:
+            return _PgCursor(conn).run(sql, params)
+
+    @contextmanager
+    def transaction(self, lock_keys: tuple[str, ...] = ()) -> Iterator[_Cursor]:
+        with self._pool.connection() as conn, conn.transaction():
+            # Per-key advisory locks serialise concurrent updates of the same
+            # counters across replicas; sorted to rule out deadlocks.
+            for key in sorted(set(lock_keys)):
+                conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (key,))
+            yield _PgCursor(conn)
+
+    def migrate(self) -> int:
+        with self._pool.connection() as conn, conn.transaction():
+            conn.execute("SELECT pg_advisory_xact_lock(%s)", (_MIGRATION_LOCK,))
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations "
+                "(version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())"
+            )
+            done = {r["version"] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+            applied = 0
+            for version, script in MIGRATIONS:
+                if version in done:
+                    continue
+                for statement in _pg_schema(script):
+                    conn.execute(statement)
+                conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (version,))
+                applied += 1
+            return applied
+
+    @contextmanager
+    def exclusive(self, name: str) -> Iterator[bool]:
+        # A session-level advisory lock held for the job's duration: only one
+        # replica runs it; the others skip this round instead of waiting.
+        with self._pool.connection() as conn:
+            row = conn.execute("SELECT pg_try_advisory_lock(hashtext(%s)) AS got", (name,)).fetchone()
+            got = bool(row and row["got"])
+            try:
+                yield got
+            finally:
+                if got:
+                    conn.execute("SELECT pg_advisory_unlock(hashtext(%s))", (name,))
+
+    def close(self) -> None:
+        self._pool.close()
+
+
+def is_postgres_url(database: str) -> bool:
+    return database.startswith(("postgresql://", "postgres://"))
+
+
+def open_database(database: str, *, pool_size: int = 10) -> _Database:
+    if is_postgres_url(database):
+        return _PostgresDatabase(database, pool_size=pool_size)
+    return _SqliteDatabase(database)
+
+
+class AccountStore:
+    def __init__(
+        self,
+        database: str,
+        history: str | HistoryFiles,
+        *,
+        auto_migrate: bool = True,
+        pool_size: int = 10,
+    ) -> None:
+        self._sql = open_database(database, pool_size=pool_size)
+        self._files: HistoryFiles = LocalHistoryFiles(history) if isinstance(history, str) else history
+        if auto_migrate:
+            self._sql.migrate()
+
+    @property
+    def dialect(self) -> str:
+        return self._sql.dialect
+
+    def migrate(self) -> int:
+        return self._sql.migrate()
+
+    def ping(self) -> None:
+        """Raise when the database is unreachable (readiness check)."""
+        self._sql.ping()
+
+    def exclusive(self, name: str) -> Any:
+        """Context manager yielding True in exactly one replica at a time."""
+        return self._sql.exclusive(name)
+
+    def close(self) -> None:
+        self._sql.close()
+
+    def _one(self, sql: str, params: tuple = ()) -> dict | None:
+        return self._sql.one(sql, params)
+
+    def _all(self, sql: str, params: tuple = ()) -> list[dict]:
+        return self._sql.all(sql, params)
 
     def _run(self, sql: str, params: tuple = ()) -> int:
-        with self._lock:
-            return self._db.execute(sql, params).rowcount
+        return self._sql.run(sql, params)
 
     # --- users ---
 
@@ -191,12 +452,37 @@ class AccountStore:
                 "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
                 (user.id, user.email, user.name, user.password_hash, user.created_at),
             )
-        except sqlite3.IntegrityError as exc:
+        except self._sql.integrity_errors as exc:
             raise EmailTaken(email) from exc
         return user
 
     def get_user(self, user_id: str) -> User | None:
         return _user(self._one("SELECT * FROM users WHERE id = ?", (user_id,)))
+
+    def ensure_external_user(self, *, subject: str, email: str | None, name: str | None, now: float) -> User:
+        """The account linked to an identity-provider subject, created on first
+        sign-in. It has no usable password. It is never merged into an existing
+        password account by email: an IdP that does not verify addresses could
+        otherwise take that account over."""
+        import hashlib
+
+        user_id = "oidc_" + hashlib.sha256(subject.encode("utf-8")).hexdigest()[:32]
+        existing = self.get_user(user_id)
+        if existing is not None:
+            return existing
+        address = (email or "").strip().lower()
+        if not address or self.get_user_by_email(address) is not None:
+            address = f"{user_id}@users.invalid"
+        try:
+            self._run(
+                "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, address, (name or address.split("@")[0])[:120], "!external", now),
+            )
+        except self._sql.integrity_errors:
+            pass  # created concurrently by another request or replica
+        user = self.get_user(user_id)
+        assert user is not None
+        return user
 
     def get_user_by_email(self, email: str) -> User | None:
         return _user(self._one("SELECT * FROM users WHERE email = ?", (email.lower(),)))
@@ -231,10 +517,10 @@ class AccountStore:
 
     def create_password_reset(self, user_id: str, *, now: float, ttl_seconds: float) -> str:
         token = new_token()
-        with self._lock:
+        with self._sql.transaction() as tx:
             # Only the newest link works.
-            self._db.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
-            self._db.execute(
+            tx.run("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+            tx.run(
                 "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
                 (token_digest(token), user_id, now + ttl_seconds),
             )
@@ -242,20 +528,17 @@ class AccountStore:
 
     def consume_password_reset(self, token: str, *, now: float) -> str | None:
         """The user id the token was issued for, once; None if unknown or expired."""
-        digest = token_digest(token)
-        with self._lock:
-            row = self._db.execute(
-                "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?", (digest,),
-            ).fetchone()
-            self._db.execute("DELETE FROM password_resets WHERE token_hash = ?", (digest,))
+        # One statement, so two replicas can never both redeem the same link.
+        row = self._one(
+            "DELETE FROM password_resets WHERE token_hash = ? RETURNING user_id, expires_at", (token_digest(token),),
+        )
         if row is None or row["expires_at"] <= now:
             return None
         return str(row["user_id"])
 
     def purge_expired_tokens(self, *, now: float) -> int:
-        with self._lock:
-            removed = self._db.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,)).rowcount
-            removed += self._db.execute("DELETE FROM password_resets WHERE expires_at <= ?", (now,)).rowcount
+        removed = self._run("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+        removed += self._run("DELETE FROM password_resets WHERE expires_at <= ?", (now,))
         return removed
 
     # --- subscriptions ---
@@ -320,45 +603,45 @@ class AccountStore:
 
     # --- free uses ---
 
-    def free_uses_used(self, keys: list[str]) -> int:
+    def free_uses_used(self, keys: list[str], *, _cursor: _Cursor | None = None) -> int:
         """The most uses recorded against any of the keys."""
         if not keys:
             return 0
         placeholders = ",".join("?" * len(keys))
-        row = self._one(f"SELECT MAX(used) AS used FROM free_usage WHERE usage_key IN ({placeholders})", tuple(keys))
+        row = (_cursor or self._sql).one(
+            f"SELECT MAX(used) AS used FROM free_usage WHERE usage_key IN ({placeholders})", tuple(keys),
+        )
         return int(row["used"]) if row and row["used"] is not None else 0
 
     def consume_free_use(self, keys: list[str], *, limit: int, now: float) -> bool:
         """Atomically record one use against every key, unless any key has
         already reached the limit."""
-        with self._lock:
-            self._db.execute("BEGIN IMMEDIATE")
-            try:
-                if self.free_uses_used(keys) >= limit:
-                    self._db.execute("ROLLBACK")
-                    return False
-                for key in keys:
-                    self._db.execute(
-                        "INSERT INTO free_usage (usage_key, used, updated_at) VALUES (?, 1, ?) "
-                        "ON CONFLICT(usage_key) DO UPDATE SET used = used + 1, updated_at = excluded.updated_at",
-                        (key, now),
-                    )
-                self._db.execute("COMMIT")
-                return True
-            except Exception:
-                self._db.execute("ROLLBACK")
-                raise
+        with self._sql.transaction(lock_keys=tuple(f"free:{k}" for k in keys)) as tx:
+            if self.free_uses_used(keys, _cursor=tx) >= limit:
+                return False
+            for key in keys:
+                tx.run(
+                    "INSERT INTO free_usage (usage_key, used, updated_at) VALUES (?, 1, ?) "
+                    "ON CONFLICT(usage_key) DO UPDATE SET used = free_usage.used + 1, "
+                    "updated_at = excluded.updated_at",
+                    (key, now),
+                )
+            return True
 
     def refund_free_use(self, keys: list[str], *, now: float) -> None:
         for key in keys:
             self._run(
-                "UPDATE free_usage SET used = MAX(used - 1, 0), updated_at = ? WHERE usage_key = ?", (now, key),
+                f"UPDATE free_usage SET used = {self._sql.greatest}(used - 1, 0), updated_at = ? WHERE usage_key = ?",
+                (now, key),
             )
 
     # --- history ---
 
     def entry_dir(self, entry_id: str) -> Path:
-        return self._history_dir / entry_id
+        """The local folder of an entry (local history files only)."""
+        if not isinstance(self._files, LocalHistoryFiles):
+            raise TypeError("History files are not stored on local disk.")
+        return self._files.entry_dir(entry_id)
 
     def create_history(
         self, *, user_id: str, plan: str, collection_name: str, now: float, retention_seconds: float,
@@ -367,9 +650,7 @@ class AccountStore:
     ) -> HistoryEntry:
         entry_id = uuid.uuid4().hex
         if collection_raw is not None:
-            folder = self.entry_dir(entry_id)
-            folder.mkdir(parents=True, exist_ok=True)
-            (folder / HISTORY_FILES["collection"]).write_bytes(collection_raw)
+            self._files.write(entry_id, HISTORY_FILES["collection"], collection_raw)
         self._run(
             "INSERT INTO history (id, user_id, job_id, analysis_id, plan, collection_name, collection_filename, "
             "collection_bytes, has_collection, created_at, updated_at, expires_at) "
@@ -413,23 +694,21 @@ class AccountStore:
         )
 
     def save_history_file(self, entry_id: str, kind: str, data: bytes, *, now: float) -> None:
-        folder = self.entry_dir(entry_id)
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / HISTORY_FILES[kind]).write_bytes(data)
+        self._files.write(entry_id, HISTORY_FILES[kind], data)
         self._run(f"UPDATE history SET has_{kind} = 1, updated_at = ? WHERE id = ?", (now, entry_id))
 
     def read_history_file(self, entry_id: str, kind: str) -> bytes | None:
-        path = self.entry_dir(entry_id) / HISTORY_FILES[kind]
-        return path.read_bytes() if path.is_file() else None
+        return self._files.read(entry_id, HISTORY_FILES[kind])
 
     def delete_history(self, entry_id: str) -> None:
         self._run("DELETE FROM history WHERE id = ?", (entry_id,))
-        shutil.rmtree(self.entry_dir(entry_id), ignore_errors=True)
+        self._files.delete(entry_id)
 
     def extend_history_retention(self, user_id: str, *, retention_seconds: float, now: float) -> None:
         """A longer plan keeps the user's current (unexpired) history longer too."""
         self._run(
-            "UPDATE history SET expires_at = MAX(expires_at, created_at + ?) WHERE user_id = ? AND expires_at > ?",
+            f"UPDATE history SET expires_at = {self._sql.greatest}(expires_at, created_at + ?) "
+            "WHERE user_id = ? AND expires_at > ?",
             (retention_seconds, user_id, now),
         )
 

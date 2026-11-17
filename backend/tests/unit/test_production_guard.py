@@ -10,7 +10,8 @@ _AWS = dict(
 _SAFE = dict(
     environment="production", auth_mode="oidc", oidc_issuer="https://idp.example.com/", oidc_audience="api",
     cors_origins="https://b11.example.com", newman_runner="disabled", billing_provider="disabled",
-    database_path="data/baseline11.db", **_AWS,
+    database_url="postgresql://b11:secret@db.internal:5432/b11", history_backend="s3", history_bucket="h",
+    session_store="s3", state_bucket="s", state_signing_key="x" * 32, **_AWS,
 )
 
 
@@ -35,6 +36,13 @@ def test_development_is_never_blocked():
     ({"kms_key_id": None}, "B11_KMS_KEY_ID"),
     ({"aws_endpoint_url": "http://localhost:5000"}, "B11_AWS_ENDPOINT_URL"),
     ({"allow_insecure_http_destinations": True}, "http"),
+    ({"billing_provider": "demo"}, "B11_BILLING_PROVIDER"),
+    ({"database_url": None}, "B11_DATABASE_URL"),
+    ({"database_url": "sqlite:///data.db"}, "B11_DATABASE_URL"),
+    ({"history_backend": "local"}, "B11_HISTORY_BACKEND"),
+    ({"session_store": "memory"}, "B11_SESSION_STORE"),
+    ({"state_bucket": None}, "B11_STATE_BUCKET"),
+    ({"state_signing_key": "short"}, "B11_STATE_SIGNING_KEY"),
 ])
 def test_each_unsafe_setting_is_named(override, needle):
     with pytest.raises(UnsafeConfiguration) as exc:
@@ -76,7 +84,9 @@ def test_demo_billing_is_refused_in_production():
     assert any("B11_BILLING_PROVIDER" in p for p in exc.value.problems)
 
 
-def test_in_memory_account_database_is_refused_in_production():
-    with pytest.raises(UnsafeConfiguration) as exc:
-        check_production_settings(Settings(**{**_SAFE, "database_path": ":memory:"}))
-    assert any("B11_DATABASE_PATH" in p for p in exc.value.problems)
+def test_local_account_database_is_refused_in_production():
+    # A SQLite file (or :memory:) lives on one task's disk; replicas need PostgreSQL.
+    for path in (":memory:", "data/baseline11.db"):
+        with pytest.raises(UnsafeConfiguration) as exc:
+            check_production_settings(Settings(**{**_SAFE, "database_url": None, "database_path": path}))
+        assert any("B11_DATABASE_URL" in p for p in exc.value.problems)

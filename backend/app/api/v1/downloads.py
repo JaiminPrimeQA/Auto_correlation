@@ -24,7 +24,7 @@ def _stem(analysis: Analysis) -> str:
 
 
 @router.get("/jmx")
-async def download_jmx(analysis: Analysis = Depends(require_analysis)) -> Response:
+def download_jmx(analysis: Analysis = Depends(require_analysis)) -> Response:
     if not analysis.generated_jmx:
         raise conflict("No JMX has been generated yet. Call generate first.")
     return Response(
@@ -38,7 +38,7 @@ async def download_jmx(analysis: Analysis = Depends(require_analysis)) -> Respon
 
 
 @router.get("/manifest")
-async def download_manifest(analysis: Analysis = Depends(require_analysis)) -> Response:
+def download_manifest(analysis: Analysis = Depends(require_analysis)) -> Response:
     if not analysis.generated_manifest:
         raise conflict("No manifest has been generated yet. Call generate first.")
     return Response(
